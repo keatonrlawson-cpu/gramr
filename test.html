@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gramr – Test Page</title>
+  <style>
+    body {
+      max-width: 680px;
+      margin: 40px auto;
+      font-family: -apple-system, sans-serif;
+      color: #1e1e2e;
+      background: #eff1f5;
+      padding: 0 20px 60px;
+    }
+    h1 { font-size: 24px; margin-bottom: 4px; }
+    p.sub { color: #666; font-size: 13px; margin-bottom: 32px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: #888; margin: 24px 0 6px; }
+    textarea, input[type=text], [contenteditable] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      line-height: 1.6;
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+      display: block;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    [contenteditable] { min-height: 80px; }
+    textarea:focus, input:focus, [contenteditable]:focus { border-color: #89b4fa; }
+    .hint { font-size: 11.5px; color: #999; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Gramr Test Page</h1>
+  <p class="sub">Load the extension in Chrome, then type (or paste) the examples below. Wavy underlines will appear; click them to learn.</p>
+
+  <h2>Textarea — try these phrases</h2>
+  <textarea id="t1" placeholder="Type something with a grammar mistake…">I went to the store, I bought milk. Their going to there house. Its a beautiful day. I don't know nothing. The rain effected our plans. I have less errors now. To who did you send it? We need to make a decision in the near future. I recieve many emails. However I disagree with you.</textarea>
+  <p class="hint">Covers: comma splice · their/there/they're · its/it's · double negative · affect/effect · fewer/less · who/whom · wordy phrase · misspelling · intro comma</p>
+
+  <h2>Single-line input</h2>
+  <input type="text" id="t2" value="Definately seperate the freind from the arguement." />
+  <p class="hint">Misspellings: definately, seperate, freind, arguement</p>
+
+  <h2>ContentEditable div</h2>
+  <div contenteditable="true" id="t3">Your going to love this. I love my parents, Lady Gaga and Humpty Dumpty.</div>
+  <p class="hint">your/you're · Oxford comma — badge appears in the corner, click it to cycle through suggestions</p>
+</body>
+</html>

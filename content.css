@@ -1,0 +1,177 @@
+/* Gramr — injected styles */
+
+/* ── Badge (for contenteditable fields) ──────────────────────────────────── */
+.gramr-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+.gramr-badge:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+.gramr-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  width: 340px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 12px;
+  box-shadow:
+    0 4px 6px rgba(0,0,0,0.1),
+    0 20px 60px rgba(0,0,0,0.5),
+    0 0 0 1px rgba(255,255,255,0.07);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(6px) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: all;
+}
+.gramr-tooltip--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Header */
+.gramr-tip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  border-left: 4px solid currentColor;
+  border-radius: 12px 12px 0 0;
+  background: rgba(255,255,255,0.04);
+}
+.gramr-tip-icon {
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.gramr-tip-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #cdd6f4;
+  flex: 1;
+}
+.gramr-tip-close {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  margin: 0;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+.gramr-tip-close:hover {
+  color: #cdd6f4;
+}
+
+/* Body */
+.gramr-tip-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gramr-tip-message {
+  margin: 0;
+  color: #cdd6f4;
+  font-size: 13px;
+}
+
+/* Details / accordion */
+.gramr-tip-details {
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+.gramr-tip-details summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a6adc8;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gramr-tip-details summary::before {
+  content: "▶";
+  font-size: 9px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.gramr-tip-details[open] summary::before {
+  transform: rotate(90deg);
+}
+.gramr-tip-details p {
+  margin: 0;
+  padding: 0 10px 10px;
+  color: #bac2de;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* Example block */
+.gramr-tip-example {
+  margin: 0;
+  padding: 8px 10px 10px;
+  font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: #a6e3a1;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.7;
+  background: rgba(0,0,0,0.2);
+}
+
+/* Fix */
+.gramr-tip-fix {
+  background: rgba(137,180,250,0.08);
+  border: 1px solid rgba(137,180,250,0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: #bac2de;
+  line-height: 1.5;
+}
+.gramr-tip-fix strong {
+  color: #89b4fa;
+}
+
+/* Scrollbar */
+.gramr-tooltip::-webkit-scrollbar {
+  width: 4px;
+}
+.gramr-tooltip::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gramr-tooltip::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
