@@ -223,8 +223,6 @@
 
     const scrollTop = el.scrollTop;
     const scrollLeft = el.scrollLeft;
-    const paddingLeft = parseFloat(style.paddingLeft);
-    const paddingTop = parseFloat(style.paddingTop);
 
     for (const finding of allFindings) {
       const color = SEVERITY_COLORS[finding.severity] || "#6b7280";
@@ -238,8 +236,10 @@
       const markerRect = spanBefore.getBoundingClientRect();
       const mirrorRect = mirror.getBoundingClientRect();
 
-      const relTop = markerRect.top - mirrorRect.top + paddingTop - scrollTop;
-      const relLeft = markerRect.left - mirrorRect.left + paddingLeft - scrollLeft;
+      // markerRect - mirrorRect already accounts for the mirror's border + padding
+      // (mirror has identical styling to the textarea), so no extra offset needed.
+      const relTop = markerRect.top - mirrorRect.top - scrollTop;
+      const relLeft = markerRect.left - mirrorRect.left - scrollLeft;
       const w = markerRect.width;
       const lineH = markerRect.height;
 
