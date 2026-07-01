@@ -1,18 +1,37 @@
 // Gramr popup script
 
 const RULES_META = [
-  { id: "misspelling",       label: "Misspellings",              severity: "error" },
-  { id: "its-its",           label: "its vs it's",               severity: "error" },
-  { id: "there-their-theyre",label: "their / there / they're",   severity: "error" },
-  { id: "your-youre",        label: "your vs you're",            severity: "error" },
-  { id: "comma-splice",      label: "Comma splices",             severity: "warning" },
-  { id: "intro-clause-comma",label: "Missing commas (intro)",    severity: "warning" },
-  { id: "affect-effect",     label: "affect vs effect",          severity: "warning" },
-  { id: "who-whom",          label: "who vs whom",               severity: "warning" },
-  { id: "fewer-less",        label: "fewer vs less",             severity: "warning" },
-  { id: "double-negative",   label: "Double negatives",          severity: "warning" },
-  { id: "oxford-comma",      label: "Oxford comma",              severity: "info" },
-  { id: "wordy",             label: "Wordy phrases",             severity: "info" },
+  // Errors
+  { id: "misspelling",            label: "Misspellings (500+)",         severity: "error" },
+  { id: "its-its",                label: "its vs it's",                 severity: "error" },
+  { id: "there-their-theyre",     label: "their / there / they're",     severity: "error" },
+  { id: "your-youre",             label: "your vs you're",              severity: "error" },
+  { id: "modal-of",               label: "could/would/should of → have",severity: "error" },
+  { id: "then-than",              label: "then vs than",                severity: "error" },
+  { id: "to-too",                 label: "to vs too",                   severity: "error" },
+  { id: "a-an",                   label: "a vs an",                     severity: "error" },
+  // Warnings
+  { id: "comma-splice",           label: "Comma splices",               severity: "warning" },
+  { id: "intro-clause-comma",     label: "Missing intro-clause comma",  severity: "warning" },
+  { id: "affect-effect",          label: "affect vs effect",            severity: "warning" },
+  { id: "who-whom",               label: "who vs whom",                 severity: "warning" },
+  { id: "fewer-less",             label: "fewer vs less",               severity: "warning" },
+  { id: "loose-lose",             label: "loose vs lose",               severity: "warning" },
+  { id: "accept-except",          label: "accept vs except",            severity: "warning" },
+  { id: "good-well",              label: "good vs well",                severity: "warning" },
+  { id: "pronoun-case",           label: "Pronoun case (between you and me)", severity: "warning" },
+  { id: "complement-compliment",  label: "complement vs compliment",    severity: "warning" },
+  { id: "principal-principle",    label: "principal vs principle",      severity: "warning" },
+  { id: "further-farther",        label: "further vs farther",          severity: "warning" },
+  { id: "imply-infer",            label: "imply vs infer",              severity: "warning" },
+  { id: "lay-lie",                label: "lay vs lie",                  severity: "warning" },
+  { id: "double-negative",        label: "Double negatives",            severity: "warning" },
+  { id: "subject-verb",           label: "Subject–verb agreement",      severity: "warning" },
+  { id: "passive-voice",          label: "Passive voice",               severity: "warning" },
+  // Info
+  { id: "oxford-comma",           label: "Oxford comma",                severity: "info" },
+  { id: "wordy",                  label: "Wordy phrases (50+)",         severity: "info" },
+  { id: "redundant-acronym",      label: "Redundant acronyms (ATM machine etc.)", severity: "info" },
 ];
 
 const toggle = document.getElementById("enableToggle");
