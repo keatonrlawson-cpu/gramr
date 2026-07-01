@@ -164,6 +164,48 @@
   color: #89b4fa;
 }
 
+/* Apply correction button */
+.gramr-apply-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: rgba(166,227,161,0.1);
+  border: 1px solid rgba(166,227,161,0.25);
+  border-radius: 8px;
+  color: #a6e3a1;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gramr-apply-btn:hover {
+  background: rgba(166,227,161,0.18);
+  border-color: rgba(166,227,161,0.45);
+}
+.gramr-apply-check {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.gramr-apply-text {
+  flex: 1;
+}
+.gramr-apply-preview {
+  color: rgba(166,227,161,0.6);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 11.5px;
+}
+.gramr-apply-btn--done {
+  background: rgba(166,227,161,0.25);
+  border-color: #a6e3a1;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Scrollbar */
 .gramr-tooltip::-webkit-scrollbar {
   width: 4px;

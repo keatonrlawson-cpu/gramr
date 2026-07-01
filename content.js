@@ -10,6 +10,7 @@
   let currentInput = null;
   let debounceTimer = null;
   let findings = [];
+  let findingsTarget = null;   // the element whose text was last analyzed
   let sessionStats = { errors: 0, warnings: 0, info: 0, seen: new Set() };
 
   // ─── Settings ────────────────────────────────────────────────────────────────
@@ -97,6 +98,7 @@
   function runCheck(el) {
     if (!enabled) return;
     const text = getText(el);
+    findingsTarget = el;
     if (!text.trim()) {
       removeAllHighlights();
       return;
@@ -339,6 +341,13 @@
     const severityIcon = { error: "✗", warning: "⚠", info: "ℹ" }[finding.severity] || "•";
     const severityColor = SEVERITY_COLORS[finding.severity];
 
+    const hasCorrection = finding.correction !== undefined;
+    const corrPreview = hasCorrection
+      ? (finding.correction === ""
+          ? "(remove)"
+          : `"${finding.correction.length > 28 ? finding.correction.slice(0, 28) + "…" : finding.correction}"`)
+      : "";
+
     tip.innerHTML = `
       <div class="gramr-tip-header" style="border-left-color:${severityColor}">
         <span class="gramr-tip-icon" style="color:${severityColor}">${severityIcon}</span>
@@ -347,6 +356,12 @@
       </div>
       <div class="gramr-tip-body">
         <p class="gramr-tip-message">${escHtml(finding.message)}</p>
+        ${hasCorrection ? `
+        <button class="gramr-apply-btn" data-apply="1">
+          <span class="gramr-apply-check">✓</span>
+          <span class="gramr-apply-text">Apply correction</span>
+          <span class="gramr-apply-preview">${escHtml(corrPreview)}</span>
+        </button>` : ""}
         <details class="gramr-tip-details" open>
           <summary>Why does this matter?</summary>
           <p>${escHtml(finding.explanation)}</p>
@@ -365,6 +380,13 @@
       e.stopPropagation();
       closeTooltip();
     });
+
+    if (hasCorrection) {
+      tip.querySelector("[data-apply]").addEventListener("click", (e) => {
+        e.stopPropagation();
+        applyCorrection(finding, tip);
+      });
+    }
 
     document.body.appendChild(tip);
     activeTooltip = tip;
@@ -395,6 +417,76 @@
       activeTooltip.remove();
       activeTooltip = null;
     }
+  }
+
+  // ─── Apply correction ─────────────────────────────────────────────────────────
+  function applyCorrection(finding, tipEl) {
+    const el = findingsTarget;
+    if (!el || finding.correction === undefined) return;
+
+    const text = getText(el);
+    const before = text.slice(0, finding.index);
+    const after  = text.slice(finding.index + finding.length);
+    const newText = before + finding.correction + after;
+
+    // Flash the button green before closing
+    if (tipEl) {
+      const btn = tipEl.querySelector("[data-apply]");
+      if (btn) {
+        btn.classList.add("gramr-apply-btn--done");
+        btn.querySelector(".gramr-apply-text").textContent = "Applied!";
+      }
+    }
+
+    setTimeout(() => {
+      if (el.isContentEditable) {
+        replaceInContentEditable(el, finding.index, finding.length, finding.correction);
+      } else {
+        const cursorPos = finding.index + finding.correction.length;
+        el.value = newText;
+        try { el.setSelectionRange(cursorPos, cursorPos); } catch (_) {}
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.focus();
+      }
+      closeTooltip();
+    }, 350);
+  }
+
+  function replaceInContentEditable(el, index, length, replacement) {
+    el.focus();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+    let node, offset = 0, startNode = null, startOff = 0, endNode = null, endOff = 0;
+
+    while ((node = walker.nextNode())) {
+      const len = node.textContent.length;
+      if (!startNode && offset + len > index) {
+        startNode = node;
+        startOff = index - offset;
+      }
+      if (!endNode && offset + len >= index + length) {
+        endNode = node;
+        endOff = index + length - offset;
+      }
+      if (startNode && endNode) break;
+      offset += len;
+    }
+
+    if (!startNode || !endNode) {
+      // Fallback: replace innerText directly
+      el.innerText = getText(el).slice(0, index) + replacement + getText(el).slice(index + length);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+
+    const range = document.createRange();
+    range.setStart(startNode, startOff);
+    range.setEnd(endNode, endOff);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // execCommand keeps undo history in the browser
+    document.execCommand("insertText", false, replacement);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function escHtml(str) {
@@ -715,326 +807,6 @@
   );
 
   const RULES = [
-    {
-      id: "comma-splice",
-      check(text) {
-        const findings = [];
-        const re = /([A-Z][^.!?]*[a-z]),\s+([A-Z][^.!?]*[a-z])/g;
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          if (hasVerb(m[1]) && hasVerb(m[2])) {
-            findings.push({
-              index: m.index + m[1].length,
-              length: 1,
-              type: "comma-splice",
-              severity: "warning",
-              label: "Comma splice",
-              message: "A comma is joining two complete sentences here.",
-              explanation:
-                "A comma splice happens when two independent clauses (sentences that could stand alone) are joined with just a comma. This is considered a grammatical error in formal writing.",
-              example:
-                "❌  I went to the store, I bought milk.\n✅  I went to the store. I bought milk.\n✅  I went to the store, and I bought milk.\n✅  I went to the store; I bought milk.",
-              fix: "Replace the comma with a period, a semicolon, or add a coordinating conjunction (and, but, or, nor, for, yet, so).",
-            });
-          }
-        }
-        return findings;
-      },
-    },
-    {
-      id: "oxford-comma",
-      check(text) {
-        const findings = [];
-        const re = /(\b\w+),\s+(\w+)\s+and\s+(\w+)\b/gi;
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          findings.push({
-            index: m.index + m[0].lastIndexOf(" and"),
-            length: 4,
-            type: "oxford-comma",
-            severity: "info",
-            label: "Oxford comma",
-            message: `Consider adding a comma before "and" in this list.`,
-            explanation:
-              'The Oxford (serial) comma is a comma placed before the final "and" or "or" in a list of three or more items. Many style guides (APA, Chicago) require it to prevent ambiguity.',
-            example:
-              "Without: I love my parents, Lady Gaga and Humpty Dumpty.\n  (Are Lady Gaga and Humpty Dumpty your parents?)\nWith: I love my parents, Lady Gaga, and Humpty Dumpty.",
-            fix: `Add a comma before "and": "…${m[2]}, and ${m[3]}…"`,
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "intro-clause-comma",
-      check(text) {
-        const findings = [];
-        const introWords = [
-          "however", "therefore", "furthermore", "moreover", "nevertheless",
-          "consequently", "additionally", "meanwhile", "otherwise", "thus",
-          "hence", "indeed", "instead", "similarly", "accordingly",
-        ];
-        const re = new RegExp(
-          `(?:^|[.!?]\\s+)(${introWords.join("|")})(\\s+[a-z])`,
-          "gi"
-        );
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          const word = m[1];
-          findings.push({
-            index: m.index + (m[0].length - m[2].length - word.length),
-            length: word.length,
-            type: "intro-clause-comma",
-            severity: "warning",
-            label: "Missing comma",
-            message: `"${word}" at the start of a sentence usually needs a comma after it.`,
-            explanation:
-              'Conjunctive adverbs like "however," "therefore," and "furthermore" need a comma after them when they appear at the start of a sentence.',
-            example: `❌  However I disagree.\n✅  However, I disagree.`,
-            fix: `Add a comma after "${word}".`,
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "its-its",
-      check(text) {
-        const findings = [];
-        const reContraction = /\bit's\s+(?:own|name|size|color|colour|way|form|place|role|part|turn|job|purpose|effect)\b/gi;
-        let m;
-        while ((m = reContraction.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 4,
-            type: "its-its",
-            severity: "error",
-            label: "its vs it's",
-            message: `"it's" here should be "its" (possessive).`,
-            explanation:
-              '"it\'s" is a contraction of "it is" or "it has." "its" (no apostrophe) is the possessive form.',
-            example:
-              '❌  The dog wagged it\'s tail.\n✅  The dog wagged its tail.',
-            fix: 'Replace "it\'s" with "its."',
-          });
-        }
-        const reIts = /\bits\s+(?:a|an|the|not|been|going|time|easy|hard|true|false|clear|possible|impossible|okay|ok)\b/gi;
-        while ((m = reIts.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 3,
-            type: "its-its",
-            severity: "error",
-            label: "its vs it's",
-            message: `"its" here looks like it should be "it's" (it is / it has).`,
-            explanation:
-              '"it\'s" is a contraction of "it is" or "it has." "its" (no apostrophe) is the possessive form.',
-            example:
-              '❌  Its going to rain.\n✅  It\'s going to rain.',
-            fix: 'Replace "its" with "it\'s."',
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "there-their-theyre",
-      check(text) {
-        const findings = [];
-        const reTheirThere = /\b(is|are|was|were|over|out|down|up|back|right|left|away)\s+their\b/gi;
-        let m;
-        while ((m = reTheirThere.exec(text)) !== null) {
-          findings.push({
-            index: m.index + m[1].length + 1,
-            length: 5,
-            type: "there-their-theyre",
-            severity: "error",
-            label: "their / there / they're",
-            message: `"their" may be wrong here — did you mean "there"?`,
-            explanation:
-              '"there" refers to a place or introduces a sentence. "their" shows possession. "they\'re" = they are.',
-            example:
-              '❌  Is their a problem?\n✅  Is there a problem?',
-            fix: 'Use "there" to refer to a place.',
-          });
-        }
-        const reTherePoss = /\bthere\s+(?:own|house|car|dog|cat|team|school|book|bag|job|idea|plan|group|family|friend|phone)\b/gi;
-        while ((m = reTherePoss.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 5,
-            type: "there-their-theyre",
-            severity: "error",
-            label: "their / there / they're",
-            message: `"there" looks like it should be "their" (possessive).`,
-            explanation:
-              '"their" shows possession. "there" refers to a place.',
-            example:
-              '❌  I like there house.\n✅  I like their house.',
-            fix: 'Replace "there" with "their."',
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "your-youre",
-      check(text) {
-        const findings = [];
-        const reYour = /\byour\s+(?:a|an|the|not|going|welcome|right|wrong|sure|ready|done|able|allowed|supposed|trying|kidding|joking|serious|crazy|awesome|amazing|great|terrible|correct|late|early|free|busy|tired|sick|excited|happy|sad|angry|nervous|lucky|smart|funny)\b/gi;
-        let m;
-        while ((m = reYour.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 4,
-            type: "your-youre",
-            severity: "error",
-            label: "your vs you're",
-            message: `"your" here looks like it should be "you're" (you are).`,
-            explanation:
-              '"you\'re" = "you are." "your" is possessive.',
-            example:
-              '❌  Your going to love this.\n✅  You\'re going to love this.',
-            fix: 'Replace "your" with "you\'re."',
-          });
-        }
-        const reYoure = /\byou're\s+(?:friend|dog|cat|car|house|phone|bag|book|team|school|job|idea|plan|family|boss|teacher|mom|dad|brother|sister|name|email|number|address|account|password|choice|decision|problem|fault|responsibility|turn|time|money|life|story|opinion|point|question|answer)\b/gi;
-        while ((m = reYoure.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 6,
-            type: "your-youre",
-            severity: "error",
-            label: "your vs you're",
-            message: `"you're" here looks like it should be "your" (possessive).`,
-            explanation:
-              '"your" shows possession. "you\'re" = you are.',
-            example:
-              "❌  I love you're dog.\n✅  I love your dog.",
-            fix: 'Replace "you\'re" with "your."',
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "double-negative",
-      check(text) {
-        const findings = [];
-        const re = /\b(can't|cannot|couldn't|don't|doesn't|didn't|won't|wouldn't|shouldn't|haven't|hasn't|hadn't|isn't|aren't|wasn't|weren't|never|no)\s+(?:\w+\s+){0,3}(nobody|no one|nothing|nowhere|neither|never|none|no)\b/gi;
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: m[0].length,
-            type: "double-negative",
-            severity: "warning",
-            label: "Double negative",
-            message: "Two negatives make a positive in standard English.",
-            explanation:
-              "In standard written English, two negative words cancel each other out, resulting in a positive meaning.",
-            example:
-              "❌  I don't know nothing. (= I know something)\n✅  I don't know anything.\n✅  I know nothing.",
-            fix: "Replace one of the negatives with its positive equivalent.",
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "affect-effect",
-      check(text) {
-        const findings = [];
-        const reEffectVerb = /\b(effect(?:s|ed|ing)?)\s+(?:the|a|an|my|your|his|her|its|our|their|this|that)\b/gi;
-        let m;
-        while ((m = reEffectVerb.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: m[1].length,
-            type: "affect-effect",
-            severity: "warning",
-            label: "affect vs effect",
-            message: `"${m[1]}" might be wrong here — did you mean "affect"?`,
-            explanation:
-              '"Affect" is almost always a verb. "Effect" is almost always a noun.',
-            example:
-              '❌  The rain effected our plans.\n✅  The rain affected our plans.\n✅  The rain had an effect on our plans.',
-            fix: 'If you mean "to influence," use "affect." If you mean "the result," use "effect."',
-          });
-        }
-        const reAffectNoun = /\bthe\s+affect\s+of\b/gi;
-        while ((m = reAffectNoun.exec(text)) !== null) {
-          findings.push({
-            index: m.index + 4,
-            length: 6,
-            type: "affect-effect",
-            severity: "warning",
-            label: "affect vs effect",
-            message: '"affect" here should probably be "effect" (noun).',
-            explanation: '"Effect" is the noun form meaning result or outcome.',
-            example:
-              '❌  the affect of the medicine\n✅  the effect of the medicine',
-            fix: 'Replace "affect" with "effect."',
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "who-whom",
-      check(text) {
-        const findings = [];
-        const reWhom = /\b(to|for|with|of|by|from|about|at|on|in|through|without|between|among|around)\s+who\b/gi;
-        let m;
-        while ((m = reWhom.exec(text)) !== null) {
-          findings.push({
-            index: m.index + m[1].length + 1,
-            length: 3,
-            type: "who-whom",
-            severity: "warning",
-            label: "who vs whom",
-            message: `After "${m[1]}," use "whom" not "who."`,
-            explanation:
-              '"Who" is a subject pronoun (like "he"). "Whom" is an object pronoun (like "him"). After a preposition, always use "whom."',
-            example:
-              '❌  To who did you send it?\n✅  To whom did you send it?',
-            fix: 'Replace "who" with "whom."',
-          });
-        }
-        return findings;
-      },
-    },
-    {
-      id: "fewer-less",
-      check(text) {
-        const findings = [];
-        const countableNouns = [
-          "people", "items", "words", "sentences", "books", "cars", "dogs",
-          "cats", "students", "employees", "errors", "mistakes", "problems",
-          "issues", "pages", "steps", "points", "calories", "grams", "pounds",
-          "miles", "hours", "minutes", "days", "weeks", "months", "years",
-          "dollars", "votes", "seats", "rooms", "options", "choices",
-          "questions", "answers", "letters", "numbers", "files", "games",
-        ];
-        const re = new RegExp(`\\bless\\s+(${countableNouns.join("|")})\\b`, "gi");
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          findings.push({
-            index: m.index,
-            length: 4,
-            type: "fewer-less",
-            severity: "warning",
-            label: "fewer vs less",
-            message: `Use "fewer" with countable nouns like "${m[1]}".`,
-            explanation:
-              '"Fewer" is for things you can count. "Less" is for uncountable amounts.',
-            example: `❌  less ${m[1]}\n✅  fewer ${m[1]}`,
-            fix: `Replace "less" with "fewer" before "${m[1]}."`,
-          });
-        }
-        return findings;
-      },
-    },
     // ── Wordy phrases ───────────────────────────────────────────────────────
     {
       id: "wordy",
@@ -1126,6 +898,7 @@
             findings.push({
               index: m.index,
               length: m[0].length,
+              correction: suggestion,
               type: "wordy",
               severity: "info",
               label: "Wordy phrase",
@@ -1153,6 +926,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[0].replace(/\bof$/, "have"),
             type: "modal-of",
             severity: "error",
             label: `"${modal} of"`,
@@ -1188,6 +962,7 @@
           findings.push({
             index: m.index + m[1].length + 1,
             length: 4,
+            correction: "than",
             type: "then-than",
             severity: "error",
             label: "then vs than",
@@ -1226,6 +1001,7 @@
           findings.push({
             index: m.index,
             length: 2,
+            correction: "too",
             type: "to-too",
             severity: "error",
             label: "to vs too",
@@ -1253,6 +1029,7 @@
           findings.push({
             index: m.index + m[0].length - 5,
             length: 5,
+            correction: "lose",
             type: "loose-lose",
             severity: "error",
             label: "loose vs lose",
@@ -1280,6 +1057,7 @@
           findings.push({
             index: m.index + m[1].length + 1,
             length: 6,
+            correction: "accept",
             type: "accept-except",
             severity: "warning",
             label: "accept vs except",
@@ -1297,6 +1075,7 @@
           findings.push({
             index: m.index + m[1].length + 1,
             length: 6,
+            correction: "except",
             type: "accept-except",
             severity: "warning",
             label: "accept vs except",
@@ -1334,6 +1113,7 @@
           findings.push({
             index: m.index,
             length: 1,
+            correction: "an",
             type: "a-an",
             severity: "error",
             label: "a vs an",
@@ -1371,6 +1151,7 @@
           findings.push({
             index: m.index,
             length: 2,
+            correction: "a",
             type: "a-an",
             severity: "error",
             label: "a vs an",
@@ -1388,6 +1169,7 @@
           findings.push({
             index: m.index,
             length: 2,
+            correction: "a",
             type: "a-an",
             severity: "error",
             label: "a vs an",
@@ -1413,6 +1195,7 @@
           findings.push({
             index: m.index + m[0].length - 4,
             length: 4,
+            correction: "well",
             type: "good-well",
             severity: "warning",
             label: "good vs well",
@@ -1440,6 +1223,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[0].replace(/\bI\b/, "me"),
             type: "pronoun-case",
             severity: "warning",
             label: "Pronoun case",
@@ -1467,6 +1251,7 @@
           findings.push({
             index: m.index,
             length: 13,
+            correction: "complementary",
             type: "complement-compliment",
             severity: "warning",
             label: "complement vs compliment",
@@ -1484,6 +1269,7 @@
           findings.push({
             index: m.index,
             length: 10,
+            correction: "complement",
             type: "complement-compliment",
             severity: "info",
             label: "complement vs compliment",
@@ -1511,6 +1297,7 @@
           findings.push({
             index: m.index + 4,
             length: 9,
+            correction: "principal",
             type: "principal-principle",
             severity: "warning",
             label: "principal vs principle",
@@ -1538,6 +1325,7 @@
           findings.push({
             index: m.index,
             length: 7,
+            correction: "further",
             type: "further-farther",
             severity: "info",
             label: "further vs farther",
@@ -1565,6 +1353,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[0].replace(/\bimp(ly|lied)\b/i, (_, s) => s.toLowerCase() === "ly" ? "infer" : "inferred"),
             type: "imply-infer",
             severity: "warning",
             label: "imply vs infer",
@@ -1582,6 +1371,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[0].replace("imply", "infer"),
             type: "imply-infer",
             severity: "warning",
             label: "imply vs infer",
@@ -1608,6 +1398,7 @@
           findings.push({
             index: m.index + m[0].lastIndexOf("lay"),
             length: 3,
+            correction: "lie",
             type: "lay-lie",
             severity: "warning",
             label: "lay vs lie",
@@ -1625,6 +1416,7 @@
           findings.push({
             index: m.index + m[0].lastIndexOf("laying"),
             length: 6,
+            correction: "lying",
             type: "lay-lie",
             severity: "warning",
             label: "lay vs lie",
@@ -1674,6 +1466,7 @@
             findings.push({
               index: m.index,
               length: m[0].length,
+              correction: acronym,
               type: "redundant-acronym",
               severity: "info",
               label: "Redundant acronym",
@@ -1715,6 +1508,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[1] + " " + correctVerb,
             type: "subject-verb",
             severity: "warning",
             label: "Subject–verb agreement",
@@ -1734,6 +1528,7 @@
           findings.push({
             index: m.index,
             length: m[0].length,
+            correction: m[1] + " " + correct,
             type: "subject-verb",
             severity: "warning",
             label: "Subject–verb agreement",
@@ -1814,6 +1609,7 @@
           findings.push({
             index: m.index + m[0].lastIndexOf(" and"),
             length: 4,
+            correction: ", and",
             type: "oxford-comma",
             severity: "info",
             label: "Oxford comma",
@@ -1855,6 +1651,7 @@
           findings.push({
             index: m.index + (m[0].length - m[2].length - word.length),
             length: word.length,
+            correction: word + ",",
             type: "intro-clause-comma",
             severity: "warning",
             label: "Missing comma",
@@ -1880,6 +1677,7 @@
           findings.push({
             index: m.index,
             length: 4,
+            correction: "its",
             type: "its-its",
             severity: "error",
             label: "its vs it's",
@@ -1896,6 +1694,7 @@
           findings.push({
             index: m.index,
             length: 3,
+            correction: "it's",
             type: "its-its",
             severity: "error",
             label: "its vs it's",
@@ -1922,6 +1721,7 @@
           findings.push({
             index: m.index + m[1].length + 1,
             length: 5,
+            correction: "there",
             type: "there-their-theyre",
             severity: "error",
             label: "their / there / they're",
@@ -1938,6 +1738,7 @@
           findings.push({
             index: m.index,
             length: 5,
+            correction: "their",
             type: "there-their-theyre",
             severity: "error",
             label: "their / there / they're",
@@ -1964,6 +1765,7 @@
           findings.push({
             index: m.index,
             length: 4,
+            correction: "you're",
             type: "your-youre",
             severity: "error",
             label: "your vs you're",
@@ -1980,6 +1782,7 @@
           findings.push({
             index: m.index,
             length: 6,
+            correction: "your",
             type: "your-youre",
             severity: "error",
             label: "your vs you're",
@@ -2032,6 +1835,7 @@
           findings.push({
             index: m.index,
             length: m[1].length,
+            correction: m[1].replace(/^[Ee]ffect/, s => s[0] === "E" ? "Affect" : "affect"),
             type: "affect-effect",
             severity: "warning",
             label: "affect vs effect",
@@ -2048,6 +1852,7 @@
           findings.push({
             index: m.index + 4,
             length: 6,
+            correction: "effect",
             type: "affect-effect",
             severity: "warning",
             label: "affect vs effect",
@@ -2074,6 +1879,7 @@
           findings.push({
             index: m.index + m[1].length + 1,
             length: 3,
+            correction: "whom",
             type: "who-whom",
             severity: "warning",
             label: "who vs whom",
@@ -2118,6 +1924,7 @@
           findings.push({
             index: m.index,
             length: 4,
+            correction: "fewer",
             type: "fewer-less",
             severity: "warning",
             label: "fewer vs less",
@@ -2143,9 +1950,12 @@
           const wrong = m[1].toLowerCase();
           const correct = MISSPELLINGS[wrong];
           if (!correct) continue;
+          const corrected = m[1][0] === m[1][0].toUpperCase() && m[1][0] !== m[1][0].toLowerCase()
+            ? correct[0].toUpperCase() + correct.slice(1) : correct;
           findings.push({
             index: m.index,
             length: m[1].length,
+            correction: corrected,
             type: "misspelling",
             severity: "error",
             label: "Misspelling",
