@@ -46,6 +46,27 @@
       <span id="statusText">Click a text field and start typing to get feedback.</span>
     </div>
 
+    <!-- Dialect selector -->
+    <section class="setting-row">
+      <label class="setting-label" for="dialectSelect">English variant</label>
+      <select class="setting-select" id="dialectSelect">
+        <option value="us">🇺🇸 American</option>
+        <option value="uk">🇬🇧 British</option>
+        <option value="au">🇦🇺 Australian</option>
+        <option value="ca">🇨🇦 Canadian</option>
+      </select>
+    </section>
+
+    <!-- Mistake history -->
+    <section class="history-section" id="historySection" hidden>
+      <div class="section-head">
+        <h2 class="section-title">Your most common mistakes</h2>
+        <button class="clear-btn" id="clearHistory" title="Clear history">Clear</button>
+      </div>
+      <ul class="history-list" id="historyList"></ul>
+      <div class="history-applied" id="historyApplied"></div>
+    </section>
+
     <!-- Rule list -->
     <section class="rules-section">
       <h2 class="section-title">What Gramr checks</h2>

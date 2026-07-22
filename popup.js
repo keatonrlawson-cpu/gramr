@@ -28,10 +28,12 @@ const RULES_META = [
   { id: "double-negative",        label: "Double negatives",            severity: "warning" },
   { id: "subject-verb",           label: "Subject–verb agreement",      severity: "warning" },
   { id: "passive-voice",          label: "Passive voice",               severity: "warning" },
+  { id: "tense-shift",            label: "Tense consistency",           severity: "warning" },
   // Info
   { id: "oxford-comma",           label: "Oxford comma",                severity: "info" },
   { id: "wordy",                  label: "Wordy phrases (50+)",         severity: "info" },
   { id: "redundant-acronym",      label: "Redundant acronyms (ATM machine etc.)", severity: "info" },
+  { id: "dialect-spelling",       label: "Regional spelling (US/UK/AU/CA)", severity: "info" },
 ];
 
 const toggle = document.getElementById("enableToggle");
@@ -41,6 +43,11 @@ const warnCount = document.getElementById("warnCount");
 const infoCount = document.getElementById("infoCount");
 const statusText = document.getElementById("statusText");
 const ruleList = document.getElementById("ruleList");
+const dialectSelect = document.getElementById("dialectSelect");
+const historySection = document.getElementById("historySection");
+const historyList = document.getElementById("historyList");
+const historyApplied = document.getElementById("historyApplied");
+const clearHistoryBtn = document.getElementById("clearHistory");
 
 // Render rule list
 for (const rule of RULES_META) {
@@ -51,10 +58,46 @@ for (const rule of RULES_META) {
 }
 
 // Load saved state
-chrome.storage.sync.get({ enabled: true }, ({ enabled }) => {
+chrome.storage.sync.get({ enabled: true, dialect: "us" }, ({ enabled, dialect }) => {
   toggle.checked = enabled;
   applyEnabledState(enabled);
+  dialectSelect.value = dialect;
 });
+
+dialectSelect.addEventListener("change", () => {
+  chrome.storage.sync.set({ dialect: dialectSelect.value });
+});
+
+// Mistake history
+loadHistory();
+clearHistoryBtn.addEventListener("click", () => {
+  chrome.storage.local.set({ history: {}, correctionsApplied: 0 });
+  historySection.hidden = true;
+});
+
+function loadHistory() {
+  chrome.storage.local.get({ history: {}, correctionsApplied: 0 }, ({ history, correctionsApplied }) => {
+    const entries = Object.entries(history).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
+    if (!entries.length && !correctionsApplied) {
+      historySection.hidden = true;
+      return;
+    }
+    historySection.hidden = false;
+    historyList.innerHTML = "";
+    for (const [type, h] of entries) {
+      const li = document.createElement("li");
+      li.className = "history-item";
+      li.innerHTML =
+        `<span class="rule-dot rule-dot--${escHtml(h.severity || "info")}"></span>` +
+        `<span class="history-label">${escHtml(h.label || type)}</span>` +
+        `<span class="history-count">×${h.count}</span>`;
+      historyList.appendChild(li);
+    }
+    historyApplied.textContent = correctionsApplied
+      ? `✓ ${correctionsApplied} correction${correctionsApplied !== 1 ? "s" : ""} applied`
+      : "";
+  });
+}
 
 // Load latest stats (stored by background.js)
 const statsStorage = chrome.storage.session ?? chrome.storage.local;

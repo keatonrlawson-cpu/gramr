@@ -12,6 +12,8 @@
   let findings = [];
   let findingsTarget = null;   // the element whose text was last analyzed
   let sessionStats = { errors: 0, warnings: 0, info: 0, seen: new Set() };
+  let dialect = "us";
+  let dialectCache = null;     // { map, re } built lazily per dialect
 
   // ─── Settings ────────────────────────────────────────────────────────────────
   const DEBOUNCE_MS = 800;
@@ -22,8 +24,9 @@
   };
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
-  chrome.storage.sync.get({ enabled: true }, (res) => {
+  chrome.storage.sync.get({ enabled: true, dialect: "us" }, (res) => {
     enabled = res.enabled;
+    dialect = res.dialect;
     if (enabled) attachListeners();
   });
 
@@ -36,6 +39,11 @@
       } else {
         attachListeners();
       }
+    }
+    if (changes.dialect) {
+      dialect = changes.dialect.newValue;
+      dialectCache = null;
+      if (enabled && currentInput) scheduleCheck(currentInput);
     }
   });
 
@@ -123,6 +131,7 @@
       if (!sessionStats.seen.has(`${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`)) {
         sessionStats[f.severity] = (sessionStats[f.severity] || 0) + 1;
         sessionStats.seen.add(`${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`);
+        recordHistory(f);
       }
     }
     // Broadcast stats to popup
@@ -450,6 +459,38 @@
       }
       closeTooltip();
     }, 350);
+
+    chrome.storage.local.get({ correctionsApplied: 0 }, ({ correctionsApplied }) => {
+      chrome.storage.local.set({ correctionsApplied: correctionsApplied + 1 });
+    });
+  }
+
+  // ─── Mistake history ──────────────────────────────────────────────────────────
+  let historyBuffer = {};
+  let historyFlushTimer = null;
+
+  function recordHistory(f) {
+    const entry = historyBuffer[f.type] || (historyBuffer[f.type] = { count: 0, label: f.label, severity: f.severity });
+    entry.count++;
+    clearTimeout(historyFlushTimer);
+    historyFlushTimer = setTimeout(flushHistory, 1500);
+  }
+
+  function flushHistory() {
+    const buf = historyBuffer;
+    historyBuffer = {};
+    if (!Object.keys(buf).length) return;
+    chrome.storage.local.get({ history: {} }, ({ history }) => {
+      for (const [type, v] of Object.entries(buf)) {
+        const h = history[type] || { count: 0 };
+        h.count += v.count;
+        h.label = v.label;
+        h.severity = v.severity;
+        h.last = Date.now();
+        history[type] = h;
+      }
+      chrome.storage.local.set({ history });
+    });
   }
 
   function replaceInContentEditable(el, index, length, replacement) {
@@ -805,6 +846,96 @@
   const MISSPELLING_RE = new RegExp(
     `\\b(${Object.keys(MISSPELLINGS).join("|")})\\b`, "gi"
   );
+
+  // ─── Regional spelling variants ──────────────────────────────────────────────
+  // [usForm, ukForm, isIzeFamily] — Canadian English keeps US -ize/-yze spellings
+  // but follows UK for -our / -re / -ce / misc.
+  const DIALECT_PAIRS = [
+    // -or / -our
+    ["color","colour"],["colors","colours"],["colored","coloured"],["colorful","colourful"],
+    ["honor","honour"],["honors","honours"],["honored","honoured"],["honorable","honourable"],
+    ["behavior","behaviour"],["behaviors","behaviours"],["behavioral","behavioural"],
+    ["favorite","favourite"],["favorites","favourites"],
+    ["favor","favour"],["favors","favours"],["favored","favoured"],["favorable","favourable"],
+    ["neighbor","neighbour"],["neighbors","neighbours"],["neighborhood","neighbourhood"],
+    ["flavor","flavour"],["flavors","flavours"],["flavored","flavoured"],
+    ["humor","humour"],["humorous","humourous"],
+    ["labor","labour"],["labors","labours"],["labored","laboured"],
+    ["rumor","rumour"],["rumors","rumours"],
+    ["armor","armour"],["armored","armoured"],
+    ["endeavor","endeavour"],["endeavors","endeavours"],
+    ["harbor","harbour"],["harbors","harbours"],
+    ["vigor","vigour"],["rigor","rigour"],["valor","valour"],["splendor","splendour"],
+    // -er / -re
+    ["center","centre"],["centers","centres"],["centered","centred"],
+    ["theater","theatre"],["theaters","theatres"],
+    ["meter","metre"],["meters","metres"],
+    ["liter","litre"],["liters","litres"],
+    ["fiber","fibre"],["fibers","fibres"],
+    ["caliber","calibre"],["somber","sombre"],["luster","lustre"],
+    // -ense / -ence
+    ["defense","defence"],["defenses","defences"],
+    ["offense","offence"],["offenses","offences"],
+    ["pretense","pretence"],
+    // -ize / -ise (Canadian keeps the US form)
+    ["organize","organise",true],["organizes","organises",true],["organized","organised",true],
+    ["organizing","organising",true],["organization","organisation",true],["organizations","organisations",true],
+    ["realize","realise",true],["realizes","realises",true],["realized","realised",true],["realizing","realising",true],
+    ["recognize","recognise",true],["recognizes","recognises",true],["recognized","recognised",true],
+    ["apologize","apologise",true],["apologized","apologised",true],["apologizing","apologising",true],
+    ["criticize","criticise",true],["criticized","criticised",true],
+    ["emphasize","emphasise",true],["emphasized","emphasised",true],
+    ["summarize","summarise",true],["summarized","summarised",true],
+    ["minimize","minimise",true],["maximize","maximise",true],
+    ["specialize","specialise",true],["specialized","specialised",true],
+    ["analyze","analyse",true],["analyzed","analysed",true],["analyzing","analysing",true],["analyzes","analyses",true],
+    ["paralyze","paralyse",true],["paralyzed","paralysed",true],
+    // doubled L
+    ["traveled","travelled"],["traveling","travelling"],["traveler","traveller"],["travelers","travellers"],
+    ["canceled","cancelled"],["canceling","cancelling"],
+    ["modeled","modelled"],["modeling","modelling"],
+    ["labeled","labelled"],["labeling","labelling"],
+    ["fueled","fuelled"],["marveled","marvelled"],
+    // misc
+    ["gray","grey"],["grays","greys"],
+    ["catalog","catalogue"],["catalogs","catalogues"],
+    ["dialog","dialogue"],["dialogs","dialogues"],
+    ["jewelry","jewellery"],
+    ["tire","tyre"],["tires","tyres"],
+    ["aluminum","aluminium"],
+    ["mustache","moustache"],
+    ["pajamas","pyjamas"],
+    ["plow","plough"],["plows","ploughs"],
+    ["skeptic","sceptic"],["skeptical","sceptical"],["skepticism","scepticism"],
+    ["mold","mould"],["molds","moulds"],
+    ["gotten","got"],
+    ["donut","doughnut"],["donuts","doughnuts"],
+    ["check","cheque"],  // only flagged UK→US direction is unsafe; handled below
+  ];
+
+  const DIALECT_NAMES = { us: "American", uk: "British", au: "Australian", ca: "Canadian" };
+
+  function buildDialectData() {
+    if (dialectCache) return dialectCache;
+    // map: wrongForm(lowercase) → correctForm
+    const map = {};
+    for (const [us, uk, ize] of DIALECT_PAIRS) {
+      // Ambiguous words we only flag in one direction
+      if (us === "check") continue;          // "cheque"/"check" too context-dependent
+      // "got" is valid everywhere; only flag "gotten" in UK/AU mode
+      if (us === "gotten" && dialect !== "uk" && dialect !== "au") continue;
+      const wantUS = dialect === "us" || (dialect === "ca" && ize);
+      const expected = wantUS ? us : uk;
+      const wrong = wantUS ? uk : us;
+      if (wrong !== expected) map[wrong] = expected;
+    }
+    const keys = Object.keys(map);
+    const re = keys.length
+      ? new RegExp(`\\b(${keys.join("|")})\\b`, "gi")
+      : null;
+    dialectCache = { map, re };
+    return dialectCache;
+  }
 
   const RULES = [
     // ── Wordy phrases ───────────────────────────────────────────────────────
@@ -1178,6 +1309,56 @@
               `Although "${m[1]}" starts with the letter U, it is pronounced with a "y" sound (like "you"), which is a consonant sound. So you need "a," not "an."`,
             example: `❌  an ${m[1]}\n✅  a ${m[1]}`,
             fix: `Change "an" to "a" before "${m[1]}."`,
+          });
+        }
+        // "a" before acronyms / proper nouns that start with a vowel SOUND
+        const vowelSoundNames = [
+          "FBI","MBA","MRI","NFL","NBA","NGO","SEO","API","LED","LCD","IOU",
+          "HTML","HTTP","HTTPS","HR","MP3","ATM","SMS","IQ","MVP","FYI","NDA",
+          "IPO","ETA","RSS","XML","FM","AM","SQL","FAQ","EU","LLC","EPA","IRS",
+          "ISP","NPC","SUV","STD","MC","MP","X-ray","Xbox","iPhone","iPad",
+          "Emmy","Oscar","Uber","Airbnb","Olympic","American","African","Asian",
+          "Australian","Austrian","Italian","Indian","Indonesian","Iranian",
+          "Iraqi","Irish","Israeli","Icelandic","English","Englishman","Egyptian",
+          "Ethiopian","Estonian","Eagle",
+        ];
+        const reAcronymA = new RegExp(`\\b([Aa])\\s+(${vowelSoundNames.join("|")})\\b`, "g");
+        while ((m = reAcronymA.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: 1,
+            correction: m[1] === "A" ? "An" : "an",
+            type: "a-an",
+            severity: "error",
+            label: "a vs an",
+            message: `Use "an" before "${m[2]}" — it starts with a vowel sound.`,
+            explanation:
+              `The a/an rule follows the sound, not the letter. "${m[2]}" is pronounced starting with a vowel sound (spell it out loud: "FBI" starts with "ef"), so it takes "an." This applies to acronyms read letter-by-letter and to names like "an MBA," "an Italian."`,
+            example: `❌  a ${m[2]}\n✅  an ${m[2]}`,
+            fix: `Change "a" to "an" before "${m[2]}."`,
+          });
+        }
+        // "an" before acronyms / proper nouns that start with a consonant SOUND
+        const consonantSoundNames = [
+          "URL","UFO","USB","UK","US","UN","UI","UX","GPS","DVD","TV","CEO",
+          "CV","PhD","VIP","GIF","JPEG","PNG","NASA","NATO","UNESCO","W3C",
+          "BBC","PC","DJ","Ukrainian","Utah","Euro","Eurozone","Yale","Jeep",
+          "one-time","one-way","one-off",
+        ];
+        const reAcronymAn = new RegExp(`\\b([Aa])n\\s+(${consonantSoundNames.join("|")})\\b`, "g");
+        while ((m = reAcronymAn.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: 2,
+            correction: m[1] === "A" ? "A" : "a",
+            type: "a-an",
+            severity: "error",
+            label: "a vs an",
+            message: `Use "a" before "${m[2]}" — it starts with a consonant sound.`,
+            explanation:
+              `The a/an rule follows the sound, not the letter. "${m[2]}" is pronounced starting with a consonant sound ("URL" starts with "you," "NASA" starts with "nah"), so it takes "a" even though it may be spelled with a vowel.`,
+            example: `❌  an ${m[2]}\n✅  a ${m[2]}`,
+            fix: `Change "an" to "a" before "${m[2]}."`,
           });
         }
         return findings;
@@ -1934,6 +2115,108 @@
             example:
               `❌  less ${m[1]}\n✅  fewer ${m[1]}\n✅  less water (uncountable)`,
             fix: `Replace "less" with "fewer" before "${m[1]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── Regional spelling (dialect) ──────────────────────────────────────────
+    {
+      id: "dialect-spelling",
+      check(text) {
+        const findings = [];
+        const { map, re } = buildDialectData();
+        if (!re) return findings;
+        const target = DIALECT_NAMES[dialect] || "American";
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          const wrong = m[1].toLowerCase();
+          const correct = map[wrong];
+          if (!correct) continue;
+          const corrected = m[1][0] === m[1][0].toUpperCase() && m[1][0] !== m[1][0].toLowerCase()
+            ? correct[0].toUpperCase() + correct.slice(1) : correct;
+          findings.push({
+            index: m.index,
+            length: m[1].length,
+            correction: corrected,
+            type: "dialect-spelling",
+            severity: "info",
+            label: `Regional spelling (${target})`,
+            message: `"${m[1]}" isn't the ${target} English spelling — use "${correct}."`,
+            explanation:
+              `English spelling differs by region. In ${target} English the standard spelling is "${correct}." Common patterns: -our/-or (colour/color), -re/-er (centre/center), -ise/-ize (organise/organize), and doubled L (travelled/traveled). You can change your dialect in the Gramr popup.`,
+            example: `❌  ${m[1]}\n✅  ${corrected}`,
+            fix: `Change "${m[1]}" to "${corrected}" for ${target} English.`,
+          });
+        }
+        re.lastIndex = 0;
+        return findings;
+      },
+    },
+
+    // ── Tense consistency ────────────────────────────────────────────────────
+    {
+      id: "tense-shift",
+      check(text) {
+        const findings = [];
+        const presentToPast = {
+          is: "was", are: "were", am: "was", goes: "went", comes: "came",
+          says: "said", sees: "saw", eats: "ate", walks: "walked",
+          runs: "ran", gets: "got", takes: "took", makes: "made",
+          wants: "wanted", knows: "knew", thinks: "thought", tells: "told",
+          asks: "asked", gives: "gave", finds: "found", feels: "felt",
+          becomes: "became", leaves: "left", starts: "started", begins: "began",
+          buys: "bought", meets: "met", decides: "decided", arrives: "arrived",
+        };
+        const pastAdverbial = "(?:yesterday|last\\s+(?:night|week|month|year|summer|winter))(?!['’]s)";
+        const rePast = new RegExp(
+          `\\b(?<!since\\s)(${pastAdverbial})\\b([^.!?\\n]{0,60}?)\\b(${Object.keys(presentToPast).join("|")})\\b`,
+          "gi"
+        );
+        let m;
+        while ((m = rePast.exec(text)) !== null) {
+          const verb = m[3].toLowerCase();
+          findings.push({
+            index: m.index + m[1].length + m[2].length,
+            length: m[3].length,
+            correction: presentToPast[verb],
+            type: "tense-shift",
+            severity: "warning",
+            label: "Tense consistency",
+            message: `"${m[1]}" signals past time, but "${m[3]}" is present tense.`,
+            explanation:
+              `Time markers like "yesterday" or "last week" put the sentence in the past, so its verbs should be in past tense. Shifting tense mid-sentence confuses the reader about when things happened. Keep the tense consistent with the time frame you set.`,
+            example: `❌  ${m[1]} she ${m[3]} to the store.\n✅  ${m[1]} she ${presentToPast[verb]} to the store.`,
+            fix: `Change "${m[3]}" to "${presentToPast[verb]}" to match the past time frame.`,
+          });
+        }
+        const pastToFuture = {
+          was: "will be", were: "will be", went: "will go", came: "will come",
+          said: "will say", saw: "will see", ate: "will eat",
+          walked: "will walk", ran: "will run", took: "will take",
+          made: "will make", bought: "will buy", met: "will meet",
+          arrived: "will arrive", started: "will start", left: "will leave",
+        };
+        const futureAdverbial = "(?:tomorrow|next\\s+(?:week|month|year|summer|winter))(?!['’]s)";
+        const reFuture = new RegExp(
+          `\\b(${futureAdverbial})\\b([^.!?\\n]{0,60}?)\\b(${Object.keys(pastToFuture).join("|")})\\b`,
+          "gi"
+        );
+        while ((m = reFuture.exec(text)) !== null) {
+          const verb = m[3].toLowerCase();
+          findings.push({
+            index: m.index + m[1].length + m[2].length,
+            length: m[3].length,
+            correction: pastToFuture[verb],
+            type: "tense-shift",
+            severity: "warning",
+            label: "Tense consistency",
+            message: `"${m[1]}" signals future time, but "${m[3]}" is past tense.`,
+            explanation:
+              `Time markers like "tomorrow" or "next week" put the sentence in the future, so past-tense verbs clash with them. Use "will" + verb (or present tense for scheduled events: "the train leaves tomorrow").`,
+            example: `❌  ${m[1]} we ${m[3]} to the beach.\n✅  ${m[1]} we ${pastToFuture[verb]} to the beach.`,
+            fix: `Change "${m[3]}" to "${pastToFuture[verb]}" to match the future time frame.`,
           });
         }
         return findings;
