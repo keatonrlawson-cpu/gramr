@@ -88,6 +88,7 @@
   function attachListeners() {
     if (listenersAttached) return;
     listenersAttached = true;
+    loadDictionary();
     document.addEventListener("focusin", onFocusIn, true);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("click", onDocClick, true);
@@ -1059,6 +1060,66 @@
   ];
 
   const DIALECT_NAMES = { us: "American", uk: "British", au: "Australian", ca: "Canadian" };
+
+  // ─── Dictionary spellchecker ─────────────────────────────────────────────────
+  // 50k-word frequency-ordered dictionary bundled with the extension. Any word
+  // not in it is a candidate misspelling; suggestions are dictionary words one
+  // edit away, ranked by frequency (Norvig's classic approach).
+  let DICT = null;        // Map word → frequency rank (lower = more common)
+  let dictLoading = false;
+
+  function loadDictionary() {
+    if (DICT || dictLoading) return;
+    dictLoading = true;
+    fetch(chrome.runtime.getURL("dict/words.txt"))
+      .then((r) => r.text())
+      .then((txt) => {
+        const map = new Map();
+        let rank = 0;
+        for (const w of txt.split("\n")) {
+          if (w) map.set(w, rank++);
+        }
+        DICT = map;
+        recheck();
+      })
+      .catch(() => { dictLoading = false; });
+  }
+
+  const LETTERS = "abcdefghijklmnopqrstuvwxyz";
+
+  // All strings one edit away (delete, transpose, replace, insert)
+  function edits1(word) {
+    const out = [];
+    for (let i = 0; i <= word.length; i++) {
+      const a = word.slice(0, i);
+      const b = word.slice(i);
+      if (b) out.push(a + b.slice(1));                              // delete
+      if (b.length > 1) out.push(a + b[1] + b[0] + b.slice(2));     // transpose
+      for (const c of LETTERS) {
+        if (b) out.push(a + c + b.slice(1));                        // replace
+        out.push(a + c + b);                                        // insert
+      }
+    }
+    return out;
+  }
+
+  function suggestFor(word) {
+    let best = null;
+    let bestRank = Infinity;
+    for (const cand of edits1(word)) {
+      const rank = DICT.get(cand);
+      if (rank !== undefined && rank < bestRank) {
+        bestRank = rank;
+        best = cand;
+      }
+    }
+    // Prefer the current dialect's form (e.g. "colour" over "color" in UK mode)
+    if (best) {
+      const { map } = buildDialectData();
+      if (map[best]) best = map[best];
+    }
+    return best;
+  }
 
   function buildDialectData() {
     if (dialectCache) return dialectCache;
@@ -2280,6 +2341,280 @@
       },
     },
 
+    // ── Irregular past participles ───────────────────────────────────────────
+    {
+      id: "past-participle",
+      check(text) {
+        const findings = [];
+        const participles = {
+          went: "gone", came: "come", saw: "seen", did: "done", ate: "eaten",
+          wrote: "written", broke: "broken", spoke: "spoken", took: "taken",
+          drank: "drunk", began: "begun", ran: "run", swam: "swum",
+          chose: "chosen", drove: "driven", fell: "fallen", flew: "flown",
+          froze: "frozen", gave: "given", knew: "known", rode: "ridden",
+          rose: "risen", sang: "sung", stole: "stolen", threw: "thrown",
+          wore: "worn", woke: "woken", drew: "drawn", grew: "grown",
+          rang: "rung", shook: "shaken", sank: "sunk", tore: "torn",
+          bit: "bitten", blew: "blown", forgot: "forgotten", hid: "hidden",
+          beat: "beaten",
+        };
+        const re = this.re || (this.re = new RegExp(
+          `\\b(have|has|had|having|\\w+['’](?:ve|d))\\s+(${Object.keys(participles).join("|")})\\b`, "gi"
+        ));
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          const verb = m[2].toLowerCase();
+          const part = participles[verb];
+          findings.push({
+            index: m.index + m[1].length + (m[0].length - m[1].length - m[2].length),
+            length: m[2].length,
+            correction: part,
+            type: "past-participle",
+            severity: "error",
+            label: "Past participle",
+            message: `After "${m[1]}," use "${part}" not "${m[2]}."`,
+            explanation:
+              `Perfect tenses (have/has/had + verb) need the past participle, not the simple past. Irregular verbs have different forms for each: "I went" (simple past) but "I have gone" (participle). "${m[2]}" is the simple past of this verb; its participle is "${part}."`,
+            example: `❌  I have ${m[2]} there.\n✅  I have ${part} there.\n✅  I ${m[2]} there. (simple past, no "have")`,
+            fix: `Change "${m[2]}" to "${part}" after "${m[1]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── Repeated word ────────────────────────────────────────────────────────
+    {
+      id: "repeated-word",
+      check(text) {
+        const findings = [];
+        // "had had" and "that that" are often legitimate
+        const allowed = new Set(["had", "that"]);
+        const re = /\b([A-Za-z]+)(\s+)\1\b/gi;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          if (allowed.has(m[1].toLowerCase())) continue;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: m[1],
+            type: "repeated-word",
+            severity: "warning",
+            label: "Repeated word",
+            message: `"${m[1]}" appears twice in a row.`,
+            explanation:
+              "Accidentally typing a word twice is one of the most common editing slips — the eye tends to skip over it, especially across a line break. (A few doubles are legitimate, like “had had”.)",
+            example: `❌  the ${m[1].toLowerCase()} ${m[1].toLowerCase()}\n✅  the ${m[1].toLowerCase()}`,
+            fix: `Delete the duplicate "${m[1]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── "Me and X" as subject ────────────────────────────────────────────────
+    {
+      id: "me-subject",
+      check(text) {
+        const findings = [];
+        const re = /\b[Mm]e\s+and\s+([A-Za-z]+)\s+(?=(?:am|are|was|were|went|go|have|had|will|would|can|could|do|did|think|want|like|need|decided|played|worked|made|got|took|saw)\b)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          const other = m[1];
+          const fixTo = `${other} and I`;
+          findings.push({
+            index: m.index,
+            length: m[0].trimEnd().length,
+            correction: fixTo,
+            type: "me-subject",
+            severity: "warning",
+            label: '"Me and…" as subject',
+            message: `"Me and ${other}" is doing the action — use "${fixTo}."`,
+            explanation:
+              `"Me" is an object pronoun; the subject of a sentence needs "I." Convention also puts the other person first. Quick test: drop the other person — "Me went to the store" sounds wrong, "I went to the store" is right.`,
+            example: `❌  Me and ${other} went out.\n✅  ${other} and I went out.\n✅  She saw ${other} and me. (object — "me" is correct)`,
+            fix: `Change "me and ${other}" to "${fixTo}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── Double comparatives / superlatives ───────────────────────────────────
+    {
+      id: "double-comparative",
+      check(text) {
+        const findings = [];
+        const re = this.re || (this.re = /\b(more|most)\s+(better|worse|faster|slower|easier|harder|bigger|smaller|stronger|weaker|smarter|nicer|taller|shorter|older|younger|richer|poorer|happier|sadder|busier|cheaper|cleaner|safer|louder|quieter|simpler|best|worst|fastest|easiest|biggest|smallest|strongest|smartest|nicest|tallest|oldest|youngest|happiest|cheapest|safest|loudest|simplest)\b/gi);
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: m[2],
+            type: "double-comparative",
+            severity: "error",
+            label: "Double comparative",
+            message: `"${m[0]}" doubles up — "${m[2]}" is already ${m[2].endsWith("st") || ["best","worst"].includes(m[2].toLowerCase()) ? "superlative" : "comparative"}.`,
+            explanation:
+              `English forms comparatives one way or the other: add -er/-est to short words (bigger, biggest) or put more/most before long ones (more interesting). Combining both ("more better") doubles the comparison and is a grammar error.`,
+            example: `❌  ${m[0]}\n✅  ${m[2]}`,
+            fix: `Drop "${m[1]}" — say just "${m[2]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── whose vs who's ───────────────────────────────────────────────────────
+    {
+      id: "whose-whos",
+      check(text) {
+        const findings = [];
+        const rePoss = /\b[Ww]ho['’]s\s+(book|car|house|idea|turn|fault|phone|name|job|dog|cat|responsibility|decision|money|team|side|bag|desk|coat|seat|room|birthday|round)\b/g;
+        let m;
+        while ((m = rePoss.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: 5,
+            correction: m[0][0] === "W" ? "Whose" : "whose",
+            type: "whose-whos",
+            severity: "error",
+            label: "whose vs who's",
+            message: `"Who's ${m[1]}" should be "whose ${m[1]}" — it shows possession.`,
+            explanation:
+              `"Who's" is always the contraction of "who is" or "who has." The possessive form is "whose." Quick test: expand it — "who is ${m[1]}?" makes no sense, so you need "whose."`,
+            example: `❌  Who's ${m[1]} is this?\n✅  Whose ${m[1]} is this?\n✅  Who's coming tonight? (= who is)`,
+            fix: `Change "who's" to "whose" before "${m[1]}."`,
+          });
+        }
+        const reContr = /\b[Ww]hose\s+(going|coming|responsible|ready|next|calling|talking|winning|first|there|available|attending|joining|paying)\b/g;
+        while ((m = reContr.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: 5,
+            correction: m[0][0] === "W" ? "Who's" : "who's",
+            type: "whose-whos",
+            severity: "error",
+            label: "whose vs who's",
+            message: `"Whose ${m[1]}" should be "who's ${m[1]}" (= who is).`,
+            explanation:
+              `"Whose" shows possession (whose coat is this?). Here you mean "who is ${m[1]}," which contracts to "who's." Quick test: if "who is" fits, use "who's."`,
+            example: `❌  Whose ${m[1]}?\n✅  Who's ${m[1]}? (= who is ${m[1]})`,
+            fix: `Change "whose" to "who's" before "${m[1]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── could care less ──────────────────────────────────────────────────────
+    {
+      id: "could-care-less",
+      check(text) {
+        const findings = [];
+        const re = /\b[Cc]ould\s+care\s+less\b/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: (m[0][0] === "C" ? "Couldn't" : "couldn't") + " care less",
+            type: "could-care-less",
+            severity: "warning",
+            label: '"could care less"',
+            message: `"Could care less" says the opposite of what you mean.`,
+            explanation:
+              `If you COULD care less, you still care some amount. The idiom is "couldn't care less" — your caring is already at zero and cannot go lower. The dropped "n't" flips the meaning.`,
+            example: `❌  I could care less about that.\n✅  I couldn't care less about that.`,
+            fix: `Add the negative: "couldn't care less."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── amount of vs number of ───────────────────────────────────────────────
+    {
+      id: "amount-number",
+      check(text) {
+        const findings = [];
+        const re = this.re || (this.re = /\b([Aa])mount\s+of\s+(people|persons|items|words|students|cars|books|errors|things|friends|days|hours|minutes|dollars|votes|users|files|questions|problems|times|emails|messages|pages|steps|reasons|options|children|employees|customers)\b/g);
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[1].length + 5,
+            correction: m[1] === "A" ? "Number" : "number",
+            type: "amount-number",
+            severity: "warning",
+            label: "amount vs number",
+            message: `Use "number of ${m[2]}," not "amount of" — ${m[2]} are countable.`,
+            explanation:
+              `"Amount" is for uncountable quantities (an amount of water, of time, of effort). Countable things take "number" (a number of people, of errors). Same logic as fewer/less.`,
+            example: `❌  amount of ${m[2]}\n✅  number of ${m[2]}\n✅  amount of water (uncountable)`,
+            fix: `Change "amount" to "number" before "of ${m[2]}."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── between X and Y ──────────────────────────────────────────────────────
+    {
+      id: "between-and",
+      check(text) {
+        const findings = [];
+        const re = /\b([Bb]etween)\s+(\w+)\s+(to|or)\s+(\w+)\b/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: `${m[1]} ${m[2]} and ${m[4]}`,
+            type: "between-and",
+            severity: "warning",
+            label: "between … and",
+            message: `"Between" pairs with "and," not "${m[3]}."`,
+            explanation:
+              `The construction is always "between X and Y." Ranges tempt people into "between 5 to 10," but "to" belongs with "from" ("from 5 to 10"). Pick one pattern: "between 5 and 10" or "from 5 to 10."`,
+            example: `❌  between ${m[2]} ${m[3]} ${m[4]}\n✅  between ${m[2]} and ${m[4]}\n✅  from ${m[2]} to ${m[4]}`,
+            fix: `Change "${m[3]}" to "and" (or use "from … to").`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── try and ──────────────────────────────────────────────────────────────
+    {
+      id: "try-and",
+      check(text) {
+        const findings = [];
+        const re = /\b([Tt])ry\s+and\s+(?=[a-z]+\b)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].trimEnd().length,
+            correction: `${m[1]}ry to`,
+            type: "try-and",
+            severity: "info",
+            label: '"try and" vs "try to"',
+            message: `"Try and" is casual — "try to" is the standard form.`,
+            explanation:
+              `"Try and do it" literally describes two actions (trying, and doing). "Try to do it" expresses the intended meaning — attempting the action. "Try and" is fine in speech but "try to" is preferred in writing.`,
+            example: `❌  I will try and finish today.\n✅  I will try to finish today.`,
+            fix: `Change "try and" to "try to."`,
+          });
+        }
+        return findings;
+      },
+    },
+
     // ── Regional spelling (dialect) ──────────────────────────────────────────
     {
       id: "dialect-spelling",
@@ -2411,6 +2746,52 @@
           });
         }
         MISSPELLING_RE.lastIndex = 0;
+        return findings;
+      },
+    },
+
+    // ── Dictionary spellcheck ────────────────────────────────────────────────
+    // Runs after the curated misspelling list (dedup keeps the curated finding
+    // when both fire on the same word). Same id so the popup toggle covers both.
+    {
+      id: "misspelling",
+      check(text) {
+        const findings = [];
+        if (!DICT) return findings;
+        const tokenRe = /[A-Za-z']+/g;
+        let m;
+        while ((m = tokenRe.exec(text)) !== null && findings.length < 40) {
+          const word = m[0];
+          // Skip: short words, anything with an apostrophe (contractions,
+          // possessives), capitalized words (names, sentence starts are
+          // checked lowercased), and ALL-CAPS acronyms
+          if (word.length < 4 || word.length > 24) continue;
+          if (word.includes("'")) continue;
+          if (word === word.toUpperCase()) continue;
+          const lower = word.toLowerCase();
+          if (word[0] !== lower[0]) continue;
+          if (DICT.has(lower)) continue;
+          const suggestion = suggestFor(lower);
+          findings.push({
+            index: m.index,
+            length: word.length,
+            ...(suggestion !== null && suggestion !== undefined ? { correction: suggestion } : {}),
+            type: "misspelling",
+            severity: "error",
+            label: "Possible misspelling",
+            message: suggestion
+              ? `"${word}" doesn't look like a word — did you mean "${suggestion}"?`
+              : `"${word}" doesn't appear in the dictionary.`,
+            explanation:
+              suggestion
+                ? `"${word}" isn't in Gramr's 50,000-word dictionary. The closest common word is "${suggestion}." If this is a name or specialist term you use often, click "Ignore — I meant this" and Gramr will remember it.`
+                : `"${word}" isn't in Gramr's 50,000-word dictionary and no close match was found. If it's a real word, name, or technical term, click "Ignore — I meant this" and Gramr will remember it.`,
+            example: suggestion ? `❌  ${word}\n✅  ${suggestion}` : `❓  ${word}`,
+            fix: suggestion
+              ? `Change "${word}" to "${suggestion}."`
+              : `Double-check the spelling of "${word}."`,
+          });
+        }
         return findings;
       },
     },

@@ -2,7 +2,10 @@
 
 const RULES_META = [
   // Errors
-  { id: "misspelling",            label: "Misspellings (500+)",         severity: "error" },
+  { id: "misspelling",            label: "Spelling (50,000-word dictionary)", severity: "error" },
+  { id: "past-participle",        label: "Past participles (have went → gone)", severity: "error" },
+  { id: "double-comparative",     label: "Double comparatives (more better)", severity: "error" },
+  { id: "whose-whos",             label: "whose vs who's",              severity: "error" },
   { id: "its-its",                label: "its vs it's",                 severity: "error" },
   { id: "there-their-theyre",     label: "their / there / they're",     severity: "error" },
   { id: "your-youre",             label: "your vs you're",              severity: "error" },
@@ -29,11 +32,17 @@ const RULES_META = [
   { id: "subject-verb",           label: "Subject–verb agreement",      severity: "warning" },
   { id: "passive-voice",          label: "Passive voice",               severity: "warning" },
   { id: "tense-shift",            label: "Tense consistency",           severity: "warning" },
+  { id: "repeated-word",          label: "Repeated words (the the)",    severity: "warning" },
+  { id: "me-subject",             label: '"Me and…" as subject',        severity: "warning" },
+  { id: "could-care-less",        label: "could care less",             severity: "warning" },
+  { id: "amount-number",          label: "amount vs number",            severity: "warning" },
+  { id: "between-and",            label: "between … and",               severity: "warning" },
   // Info
   { id: "oxford-comma",           label: "Oxford comma",                severity: "info" },
   { id: "wordy",                  label: "Wordy phrases (50+)",         severity: "info" },
   { id: "redundant-acronym",      label: "Redundant acronyms (ATM machine etc.)", severity: "info" },
   { id: "dialect-spelling",       label: "Regional spelling (US/UK/AU/CA)", severity: "info" },
+  { id: "try-and",                label: '"try and" vs "try to"',       severity: "info" },
 ];
 
 const toggle = document.getElementById("enableToggle");

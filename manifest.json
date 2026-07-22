@@ -17,6 +17,12 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dict/words.txt"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
