@@ -41,15 +41,99 @@
       </div>
     </section>
 
+    <!-- Progress: level, XP, streak -->
+    <section class="progress" id="progressSection">
+      <div class="progress-top">
+        <span class="progress-title" id="levelTitle">Novice</span>
+        <span class="progress-streak" id="streakBadge" hidden>🔥 <span id="streakDays">0</span>-day streak</span>
+        <span class="progress-xp" id="xpText">0 XP</span>
+      </div>
+      <div class="xp-bar">
+        <div class="xp-bar-fill" id="xpBarFill"></div>
+      </div>
+      <div class="progress-sub" id="xpNext"></div>
+    </section>
+
     <!-- Status message -->
     <div class="status-msg" id="statusMsg">
       <span id="statusText">Click a text field and start typing to get feedback.</span>
     </div>
 
+    <!-- Canvas-editor notice (Google Docs etc.) -->
+    <section class="docs-notice" id="docsNotice" hidden>
+      <p class="docs-notice-text">📄 This editor draws to a canvas, so Gramr can't check it inline.</p>
+      <button class="docs-notice-btn" id="openCheckerBtn">Open the paste-to-check tool →</button>
+    </section>
+
+    <!-- Focus of the week -->
+    <section class="focus-card" id="focusCard" hidden>
+      <div class="focus-head">🎯 This week's focus</div>
+      <div class="focus-rule" id="focusRule"></div>
+      <p class="focus-example" id="focusExample" hidden></p>
+      <p class="focus-lesson" id="focusLesson"></p>
+      <p class="focus-trick" id="focusTrick"></p>
+    </section>
+
+    <!-- Quick practice (spaced repetition) -->
+    <section class="quiz-card" id="quizCard" hidden>
+      <div class="quiz-head">🧠 Quick practice</div>
+      <p class="quiz-context" id="quizContext" hidden></p>
+      <p class="quiz-q" id="quizQ"></p>
+      <div class="quiz-choices" id="quizChoices"></div>
+      <p class="quiz-result" id="quizResult" hidden></p>
+    </section>
+
+    <!-- Dialect selector -->
+    <section class="setting-row">
+      <label class="setting-label" for="dialectSelect">English variant</label>
+      <select class="setting-select" id="dialectSelect">
+        <option value="us">🇺🇸 American</option>
+        <option value="uk">🇬🇧 British</option>
+        <option value="au">🇦🇺 Australian</option>
+        <option value="ca">🇨🇦 Canadian</option>
+      </select>
+    </section>
+
+    <!-- Per-site disable -->
+    <section class="setting-row" id="siteRow" hidden>
+      <label class="setting-label" for="siteToggle">Disable on <span id="siteHost"></span></label>
+      <label class="toggle toggle--small" title="Disable Gramr on this site">
+        <input type="checkbox" id="siteToggle" />
+        <span class="toggle-track">
+          <span class="toggle-thumb"></span>
+        </span>
+      </label>
+    </section>
+
+    <!-- Mistake history -->
+    <section class="history-section" id="historySection" hidden>
+      <div class="section-head">
+        <h2 class="section-title">Your most common mistakes</h2>
+        <button class="clear-btn" id="clearHistory" title="Clear history">Clear</button>
+      </div>
+      <ul class="history-list" id="historyList"></ul>
+      <div class="history-applied" id="historyApplied"></div>
+    </section>
+
     <!-- Rule list -->
     <section class="rules-section">
-      <h2 class="section-title">What Gramr checks</h2>
+      <h2 class="section-title">What Gramr checks <span class="section-hint">(click to toggle)</span></h2>
       <ul class="rule-list" id="ruleList"></ul>
+    </section>
+
+    <!-- Options -->
+    <section class="options-section">
+      <details class="options">
+        <summary>Options</summary>
+        <label class="opt-row"><input type="checkbox" id="optGamification" checked /> XP, levels &amp; streaks</label>
+        <label class="opt-row"><input type="checkbox" id="optBadges" checked /> Mastery badges (🌱📈⭐)</label>
+        <label class="opt-row"><input type="checkbox" id="optFocus" checked /> Focus of the week</label>
+        <label class="opt-row"><input type="checkbox" id="optQuiz" checked /> Practice questions</label>
+        <label class="opt-row"><input type="checkbox" id="optHistory" checked /> Mistake history</label>
+        <label class="opt-row"><input type="checkbox" id="optAdaptive" checked /> Adaptive tooltips (shorter as you improve)</label>
+        <label class="opt-row"><input type="checkbox" id="optProveIt" /> Prove-it mode (answer a quick check before Apply)</label>
+        <button class="opt-link" id="openCheckerLink">🔍 Open the paste-to-check tool</button>
+      </details>
     </section>
 
     <!-- About -->

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to Gramr</title>
+  <link rel="stylesheet" href="content.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      line-height: 1.6;
+      padding: 40px 20px 80px;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    .logo-row { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    .logo-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: linear-gradient(135deg, #cba6f7 0%, #89b4fa 100%);
+      color: #1e1e2e; font-size: 24px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+    }
+    h1 { font-size: 26px; }
+    .tagline { color: #a6adc8; font-size: 15px; margin-bottom: 32px; }
+    h2 { font-size: 17px; margin: 32px 0 12px; color: #cba6f7; }
+    p { color: #bac2de; font-size: 14px; margin-bottom: 10px; }
+    .legend { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+    .legend-item {
+      display: flex; align-items: baseline; gap: 12px;
+      background: #181825; border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px; padding: 12px 16px; font-size: 14px;
+    }
+    .sq { font-weight: 600; white-space: nowrap; }
+    .sq-error   { text-decoration: underline wavy #ef4444 2px; text-underline-offset: 4px; }
+    .sq-warning { text-decoration: underline dashed #f59e0b 2px; text-underline-offset: 4px; }
+    .sq-info    { text-decoration: underline dotted #3b82f6 2px; text-underline-offset: 4px; }
+    .legend-desc { color: #a6adc8; font-size: 13px; }
+    .steps { margin: 14px 0 0 0; padding-left: 20px; color: #bac2de; font-size: 14px; }
+    .steps li { margin-bottom: 8px; }
+    .steps strong { color: #cdd6f4; }
+    .playground {
+      margin-top: 14px;
+      background: #181825; border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px; padding: 16px;
+    }
+    .playground label {
+      display: block; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.07em; font-weight: 700; color: #6c7086; margin-bottom: 10px;
+    }
+    textarea {
+      width: 100%; min-height: 190px; resize: vertical;
+      background: #11111b; color: #cdd6f4;
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+      padding: 14px; font-size: 15px; line-height: 1.7;
+      font-family: inherit; outline: none;
+    }
+    textarea:focus { border-color: #cba6f7; }
+    .hint { font-size: 12.5px; color: #6c7086; margin-top: 10px; }
+    .footer-note {
+      margin-top: 40px; padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      color: #6c7086; font-size: 13px; font-style: italic;
+    }
+    kbd {
+      background: #313244; border-radius: 4px; padding: 1px 6px;
+      font-size: 12px; font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo-row">
+      <div class="logo-icon">G</div>
+      <h1>Welcome to Gramr</h1>
+    </div>
+    <p class="tagline">Your grammar coach — it teaches you the rule instead of silently rewriting your words.</p>
+
+    <h2>What the underlines mean</h2>
+    <div class="legend">
+      <div class="legend-item"><span class="sq sq-error">Red wavy</span><span class="legend-desc">Errors — misspellings, its/it's, could of, have went…</span></div>
+      <div class="legend-item"><span class="sq sq-warning">Amber dashed</span><span class="legend-desc">Warnings — who/whom, fewer/less, tense shifts, comma splices…</span></div>
+      <div class="legend-item"><span class="sq sq-info">Blue dotted</span><span class="legend-desc">Tips — wordy phrases, regional spelling, style suggestions…</span></div>
+    </div>
+
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li><strong>Click any underline</strong> to see what's wrong, why it matters, and a trick to remember the rule.</li>
+      <li><strong>Apply correction</strong> fixes it in one click (and earns XP). <kbd>Ctrl+Z</kbd> undoes it.</li>
+      <li><strong>Ignore — I meant this</strong> teaches Gramr your names and jargon; it won't flag them again.</li>
+      <li>Open the <strong>toolbar popup</strong> for your level, streak, weekly focus rule, and a daily practice question. Pick your English variant (US/UK/AU/CA) there too.</li>
+      <li>The tooltips <strong>shrink as you improve</strong> — once you've mastered a rule, Gramr stops lecturing you about it.</li>
+      <li>Writing in <strong>Google Docs</strong> or another editor Gramr can't reach? Use the <a href="checker.html" style="color:#89b4fa">paste-to-check tool</a> — paste, fix, copy back.</li>
+    </ol>
+
+    <h2>Try it right now</h2>
+    <div class="playground">
+      <label>Live playground — click into the text below</label>
+      <textarea id="play" spellcheck="false">Yesterday me and John have went to the store, we definately could of taken less items. The the checkout line was more better then expected — a MBA student infront of us payed with a cheque wich suprised everyone.
+
+Its funny how it took to long, but John could care less. Whose name is yours. For all intensive purposes we will return back tomorrow.</textarea>
+      <div class="hint">Click into the box, wait a beat, then click the underlines that appear. Every one of them is a lesson.</div>
+    </div>
+
+    <p class="footer-note">Gramr never sends your text anywhere — all checking happens on your device, and your progress is stored locally in your browser.</p>
+  </div>
+  <script src="content.js"></script>
+</body>
+</html>

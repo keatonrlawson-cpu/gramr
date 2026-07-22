@@ -71,6 +71,46 @@
   color: #cdd6f4;
   flex: 1;
 }
+.gramr-tip-band {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f9e2af;
+  background: rgba(249,226,175,0.12);
+  border: 1px solid rgba(249,226,175,0.3);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gramr-tip-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.gramr-nav-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 5px;
+  color: #a6adc8;
+  font-size: 13px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s, border-color 0.12s;
+}
+.gramr-nav-btn:hover {
+  color: #cdd6f4;
+  border-color: rgba(255,255,255,0.3);
+}
+.gramr-nav-count {
+  font-size: 10.5px;
+  color: #6c7086;
+  padding: 0 4px;
+  white-space: nowrap;
+}
 .gramr-tip-close {
   background: none;
   border: none;
@@ -162,6 +202,121 @@
 }
 .gramr-tip-fix strong {
   color: #89b4fa;
+}
+
+/* Apply correction button */
+.gramr-apply-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: rgba(166,227,161,0.1);
+  border: 1px solid rgba(166,227,161,0.25);
+  border-radius: 8px;
+  color: #a6e3a1;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gramr-apply-btn:hover {
+  background: rgba(166,227,161,0.18);
+  border-color: rgba(166,227,161,0.45);
+}
+.gramr-apply-check {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.gramr-apply-text {
+  flex: 1;
+}
+.gramr-apply-preview {
+  color: rgba(166,227,161,0.6);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 11.5px;
+}
+.gramr-apply-btn--done {
+  background: rgba(166,227,161,0.25);
+  border-color: #a6e3a1;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Prove-it mode */
+.gramr-prove {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  background: rgba(203,166,247,0.07);
+  border: 1px solid rgba(203,166,247,0.2);
+  border-radius: 8px;
+}
+.gramr-prove-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #cba6f7;
+}
+.gramr-prove-btn {
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #cdd6f4;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.gramr-prove-btn:hover:not(:disabled) {
+  border-color: #cba6f7;
+}
+.gramr-prove-btn:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.gramr-prove-btn--right {
+  background: rgba(166,227,161,0.15) !important;
+  border-color: #a6e3a1 !important;
+  color: #a6e3a1 !important;
+  opacity: 1 !important;
+}
+.gramr-prove-btn--wrong {
+  background: rgba(243,139,168,0.12) !important;
+  border-color: #f38ba8 !important;
+  color: #f38ba8 !important;
+  opacity: 1 !important;
+}
+.gramr-prove-hint {
+  font-size: 11.5px;
+  color: #bac2de;
+  line-height: 1.5;
+}
+
+/* Ignore button */
+.gramr-ignore-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, border-color 0.15s;
+}
+.gramr-ignore-btn:hover {
+  color: #a6adc8;
+  border-color: rgba(255,255,255,0.25);
 }
 
 /* Scrollbar */

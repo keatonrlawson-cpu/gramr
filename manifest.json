@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Gramr - Learn Grammar as You Type",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Real-time grammar learning coach. Spot mistakes, understand the rules, and write better — without auto-correct.",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["<all_urls>"],
@@ -11,9 +11,16 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "all_frames": true,
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dict/words.txt"],
+      "matches": ["<all_urls>"]
     }
   ],
   "action": {
