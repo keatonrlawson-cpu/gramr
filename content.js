@@ -2967,9 +2967,14 @@
         // Direct: "How are you." / "What is your name." — aux right after the
         // question word, so declaratives like "What matters is effort." don't fire.
         // Determiner: "Whose name is yours." / "Which one do you want."
+        // Yes/no questions: aux + pronoun at sentence start ("Can you help me.").
+        // Should/Were/Had are excluded — they open conditionals ("Should you
+        // need anything, call me."), and bare "Do it." is imperative.
+        const YNAUX = "(?:Can|Could|Would|Will|Do(?!\\s+it\\b)|Does|Did|Is|Are|Am|May|Shall|Don['’]t|Doesn['’]t|Didn['’]t|Isn['’]t|Aren['’]t|Can['’]t|Couldn['’]t|Wouldn['’]t|Won['’]t|Shouldn['’]t)";
         const res = this.res || (this.res = [
           new RegExp(`(^|[.!?]\\s+|\\n\\s*)(Who|What|Where|When|Why|How|Whose|Which)\\s+${AUX}\\b(?!\\s+more,|\\s+worse,)[^.!?\\n]*?(\\.)`, "g"),
           new RegExp(`(^|[.!?]\\s+|\\n\\s*)(Whose|Which)\\s+\\w+\\s+${AUX}\\b[^.!?\\n]*?(\\.)`, "g"),
+          new RegExp(`(^|[.!?]\\s+|\\n\\s*)(${YNAUX})\\s+(?:you|we|they|he|she|it|I|anyone|anybody|someone|somebody|there)\\b[^.!?\\n]*?(\\.)`, "g"),
         ]);
         const seen = new Set();
         for (const re of res) {
@@ -3044,6 +3049,64 @@
             fix: `Change "how" to "what."`,
           });
         }
+        // "How does it look like?" → "What does it look like?"
+        const reLookLike = /\b([Hh])ow\s+(does|do|did)\s+(\w+)\s+look\s+like\b/g;
+        while ((m = reLookLike.exec(text)) !== null) {
+          const fixTo = `${m[1] === "H" ? "What" : "what"} ${m[2]} ${m[3]} look like`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "question-phrasing",
+            severity: "warning",
+            label: "Question phrasing",
+            message: `Use "what … look like" or "how … look" — not both.`,
+            explanation:
+              `Two patterns got blended: "How does it look?" and "What does it look like?" both work, but "how … look like" mixes them. "Like" pairs with "what."`,
+            example: `❌  How does it look like?\n✅  What does it look like?\n✅  How does it look?`,
+            fix: `Change "how" to "what" (or drop "like").`,
+          });
+        }
+        // Uninverted questions: "Why you are sad?" → "Why are you sad?"
+        // Anchored to sentence start so embedded clauses ("Do you know what
+        // you are doing?") don't fire; requires the trailing "?"
+        const reUninv = /(^|[.!?]\s+|\n\s*)(Where|What|When|Why|How|Who)\s+(you|we|they|he|she|it|i)\s+(am|is|are|was|were|do|does|did|can|could|will|would|should)\b([^.!?\n]*)\?/gm;
+        while ((m = reUninv.exec(text)) !== null) {
+          const pron = m[3] === "i" ? "I" : m[3];
+          const fixTo = `${m[2]} ${m[4]} ${pron}${m[5]}?`;
+          const start = m.index + m[1].length;
+          findings.push({
+            index: start,
+            length: m[0].length - m[1].length,
+            correction: fixTo,
+            type: "question-phrasing",
+            severity: "warning",
+            label: "Question phrasing",
+            message: `Questions invert the verb: "${m[2]} ${m[4]} ${pron}…?"`,
+            explanation:
+              `Direct questions in English swap the subject and auxiliary verb: "you are" becomes "are you." Keeping statement order ("Why you are sad?") is a very common carry-over from languages that form questions by intonation alone.`,
+            example: `❌  ${m[2]} ${m[3]} ${m[4]}…?\n✅  ${m[2]} ${m[4]} ${pron}…?`,
+            fix: `Swap them: "${m[2]} ${m[4]} ${pron}…?"`,
+          });
+        }
+        // "Can you borrow me your pen?" → "lend me"
+        const reBorrow = /\b([Bb])orrow\s+(me|us|him|her|them)\b/g;
+        while ((m = reBorrow.exec(text)) !== null) {
+          const fixTo = `${m[1] === "B" ? "Lend" : "lend"} ${m[2]}`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "question-phrasing",
+            severity: "warning",
+            label: "borrow vs lend",
+            message: `The giver lends; the receiver borrows — here you want "${fixTo}."`,
+            explanation:
+              `"Borrow" means to take temporarily; "lend" means to give temporarily. You borrow FROM someone and lend TO someone, so "borrow me your pen" reverses the direction — the person with the pen lends it.`,
+            example: `❌  Can you borrow me your pen?\n✅  Can you lend me your pen?\n✅  Can I borrow your pen?`,
+            fix: `Change "borrow ${m[2]}" to "${fixTo}."`,
+          });
+        }
         return findings;
       },
     },
@@ -3085,6 +3148,46 @@
           "per say": "per se",
           "day in age": "day and age",
           "chock it up": "chalk it up",
+          "all of the sudden": "all of a sudden",
+          "by in large": "by and large",
+          "hone in on": "home in on",
+          "make due": "make do",
+          "made due": "made do",
+          "making due": "making do",
+          "peak your interest": "pique your interest",
+          "peak my interest": "pique my interest",
+          "peaks my interest": "piques my interest",
+          "peaks your interest": "piques your interest",
+          "sneak peaks": "sneak peeks",
+          "beyond the pail": "beyond the pale",
+          "reign in": "rein in",
+          "reign it in": "rein it in",
+          "shoe-in": "shoo-in",
+          "tongue and cheek": "tongue-in-cheek",
+          "scot free": "scot-free",
+          "scott free": "scot-free",
+          "another words": "in other words",
+          "flush out the details": "flesh out the details",
+          "flush out the idea": "flesh out the idea",
+          "doesn't phase": "doesn't faze",
+          "didn't phase": "didn't faze",
+          "won't phase": "won't faze",
+          "wreck havoc": "wreak havoc",
+          "wrecking havoc": "wreaking havoc",
+          "without further adieu": "without further ado",
+          "take for granite": "take for granted",
+          "curve your appetite": "curb your appetite",
+          "curve your enthusiasm": "curb your enthusiasm",
+          "bare in mind": "bear in mind",
+          "bare with me": "bear with me",
+          "jive with": "jibe with",
+          "step foot in": "set foot in",
+          "on route to": "en route to",
+          "segway into": "segue into",
+          "prostrate cancer": "prostate cancer",
+          "conversate": "converse",
+          "conversating": "conversing",
+          "excetera": "et cetera",
         };
         if (!this.compiled) {
           this.compiled = Object.entries(eggcorns).map(([wrong, right]) => ({
@@ -3134,6 +3237,35 @@
           "merge together": "merge", "merged together": "merged",
           "advance planning": "planning",
           "raise up": "raise", "lower down": "lower",
+          "absolutely essential": "essential",
+          "brief moment": "moment",
+          "close scrutiny": "scrutiny",
+          "collaborate together": "collaborate", "collaborated together": "collaborated",
+          "completely finished": "finished",
+          "consensus of opinion": "consensus",
+          "general consensus": "consensus",
+          "continue on": "continue", "continued on": "continued",
+          "current status quo": "status quo",
+          "empty out": "empty", "emptied out": "emptied",
+          "exact same": "same",
+          "final conclusion": "conclusion",
+          "first began": "began",
+          "foreign imports": "imports",
+          "past experience": "experience",
+          "personal opinion": "opinion",
+          "plan in advance": "plan",
+          "postpone until later": "postpone",
+          "refer back": "refer", "referred back": "referred",
+          "reply back": "reply", "replied back": "replied",
+          "sum total": "total",
+          "warn in advance": "warn", "warned in advance": "warned",
+          "whether or not": "whether",
+          "added together": "added",
+          "blend together": "blend", "blended together": "blended",
+          "connect together": "connect", "connected together": "connected",
+          "cooperate together": "cooperate",
+          "meet together": "meet",
+          "still remains": "remains",
         };
         if (!this.compiled) {
           this.compiled = Object.entries(pairs).map(([wrong, right]) => ({
@@ -3229,6 +3361,168 @@
             example: `❌  ${m[1].toLowerCase()} the ${m[2]}\n✅  ${verb} the ${m[2]}`,
             fix: `Use "${verb}" instead of "${m[1].toLowerCase()}."`,
           });
+        }
+        // "explain me the rule" → "explain to me the rule"
+        const reExplain = /\b(explain|explains|explained|describe|describes|described|suggest|suggests|suggested|recommend|recommends|recommended)\s+(me|us|him|her|them)\b(?=\s+(?:the|this|that|a|an|how|what|why|your|my|our|his|her|their|it))/gi;
+        while ((m = reExplain.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: `${m[1]} to ${m[2]}`,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `"${m[1]}" needs "to" before the person: "${m[1]} to ${m[2]}."`,
+            explanation:
+              `Verbs like tell and show take the person directly ("tell me the rule"), but explain, describe, suggest, and recommend need "to": "explain the rule to me" or "explain to me the rule." Mixing the two patterns is a classic carry-over.`,
+            example: `❌  Explain me the rule.\n✅  Explain the rule to me.\n✅  Explain to me how it works.`,
+            fix: `Add "to": "${m[1]} to ${m[2]}."`,
+          });
+        }
+        // "say me the truth" → "tell me"
+        const sayMap = { say: "tell", says: "tells", said: "told", saying: "telling" };
+        const reSay = /\b(say|says|said|saying)\s+(me|us|him|her|them)\b/gi;
+        while ((m = reSay.exec(text)) !== null) {
+          const verb = sayMap[m[1].toLowerCase()];
+          const fixTo = `${m[1][0] === m[1][0].toUpperCase() ? verb[0].toUpperCase() + verb.slice(1) : verb} ${m[2]}`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "say vs tell",
+            message: `You "tell" a person and "say" words — here you want "${fixTo}."`,
+            explanation:
+              `"Tell" takes the listener directly (tell me, tell her); "say" takes the words (say something, say that…). "Say me" mixes them — English never puts the person right after "say."`,
+            example: `❌  Say me the truth.\n✅  Tell me the truth.\n✅  Say what you mean.`,
+            fix: `Change "${m[1].toLowerCase()}" to "${verb}."`,
+          });
+        }
+        // "listening music" → "listening to music"
+        const reListen = /\b(listen|listens|listened|listening)\b(?=\s+(?:music|songs|podcasts|the\s+(?:radio|music|song|podcast)))/gi;
+        while ((m = reListen.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[1].length,
+            correction: `${m[1]} to`,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `"Listen" needs "to" before the thing you hear.`,
+            explanation:
+              `"Hear" takes its object directly (hear music), but "listen" always needs "to": listen to music, listen to the radio. Dropping the "to" is one of the most common preposition slips.`,
+            example: `❌  I love listening music.\n✅  I love listening to music.`,
+            fix: `Add "to" after "${m[1].toLowerCase()}."`,
+          });
+        }
+        // "depends of" → "depends on"
+        const reDepend = /\b(depend|depends|depended|depending)\s+of\b/gi;
+        while ((m = reDepend.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: `${m[1]} on`,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `English says "${m[1]} on," not "${m[1]} of."`,
+            explanation:
+              `Many languages pair their "depend" with "of" (depende de, dépend de), but English fixed on "on": it depends on the weather. Prepositions after verbs are conventions to memorize, not logic.`,
+            example: `❌  It depends of the weather.\n✅  It depends on the weather.`,
+            fix: `Change "of" to "on."`,
+          });
+        }
+        // "married with John" → "married to John" (but "married with children" stays)
+        const reMarried = /\bmarried\s+with\b(?=\s+(?:him|her|them|[A-Z]))/g;
+        while ((m = reMarried.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: "married to",
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `You're "married to" a person, not "married with."`,
+            explanation:
+              `English uses "to" for the spouse: married to Alex. "With" describes what accompanies the marriage — "married with children" means having kids, not being wed to them.`,
+            example: `❌  She is married with John.\n✅  She is married to John.\n✅  Married, with two children.`,
+            fix: `Change "with" to "to."`,
+          });
+        }
+        // "make homework" → "do homework"
+        const reHomework = /\b([Mm])ake\s+((?:my|your|his|her|their|our|the|some)\s+)?homework\b/g;
+        while ((m = reHomework.exec(text)) !== null) {
+          const fixTo = `${m[1] === "M" ? "Do" : "do"} ${m[2] || ""}homework`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `English "does" homework rather than "making" it.`,
+            explanation:
+              `Do vs. make is a collocation minefield: you do homework, work, and the dishes; you make decisions, mistakes, and dinner. There's no rule — each pairing is a convention.`,
+            example: `❌  make ${m[2] || ""}homework\n✅  do ${m[2] || ""}homework`,
+            fix: `Change "make" to "do."`,
+          });
+        }
+        // "make a party" → "throw a party"
+        const reParty = /\b([Mm])ake\s+a\s+party\b/g;
+        while ((m = reParty.exec(text)) !== null) {
+          const fixTo = `${m[1] === "M" ? "Throw" : "throw"} a party`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `English "throws" or "has" a party rather than "making" one.`,
+            explanation:
+              `Collocation again: parties are thrown, held, or had in English. "Make a party" is understandable but marks the sentence as non-native.`,
+            example: `❌  We will make a party.\n✅  We will throw a party.\n✅  We will have a party.`,
+            fix: `Change "make" to "throw" (or "have").`,
+          });
+        }
+        // "cousin brother" → "cousin" (standard in Indian English; flagged for
+        // international-audience writing)
+        const reCousin = /\b([Cc])ousin\s+(brother|sister)\b/g;
+        while ((m = reCousin.exec(text)) !== null) {
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: `${m[1]}ousin`,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `Outside Indian English, it's just "cousin" — no "${m[2]}."`,
+            explanation:
+              `"Cousin ${m[2]}" is standard in Indian English to mark the cousin's gender. International English uses plain "cousin" for both, adding "male/female cousin" only when the distinction matters.`,
+            example: `❌  my cousin ${m[2]}\n✅  my cousin`,
+            fix: `Drop "${m[2]}" — say "cousin."`,
+          });
+        }
+        // "take a decision" → "make a decision" (fine in British English)
+        if (dialect === "us" || dialect === "ca") {
+          const reDecision = /\b([Tt])ake\s+(a|the)\s+(decision|decisions)\b/g;
+          while ((m = reDecision.exec(text)) !== null) {
+            const fixTo = `${m[1] === "T" ? "Make" : "make"} ${m[2]} ${m[3]}`;
+            findings.push({
+              index: m.index,
+              length: m[0].length,
+              correction: fixTo,
+              type: "unidiomatic",
+              severity: "info",
+              label: "Unidiomatic phrasing",
+              message: `American English "makes" decisions ("take a decision" is British).`,
+              explanation:
+                `Both are correct somewhere: British English happily "takes decisions," while American English almost always "makes" them. Since your dialect is set to ${DIALECT_NAMES[dialect]}, "make" is the expected form.`,
+              example: `❌  take ${m[2]} ${m[3]} (US)\n✅  make ${m[2]} ${m[3]}`,
+              fix: `Change "take" to "make."`,
+            });
+          }
         }
         return findings;
       },
