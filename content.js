@@ -24,7 +24,7 @@
   let historyLocal = {};           // mirror of chrome.storage.local history
   let streakTouchedDay = null;
   // Optional features — all on by default, toggleable in the popup
-  let prefs = { gamification: true, badges: true, focus: true, history: true, adaptive: true };
+  let prefs = { gamification: true, badges: true, focus: true, history: true, adaptive: true, quiz: true, proveIt: false };
 
   // ─── Learning model ──────────────────────────────────────────────────────────
   // Every rule is a "slip" (typing accident — don't teach), a "habit" (style
@@ -342,7 +342,7 @@
       const histKey = `${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`;
       if (!sessionStats.seen.has(histKey)) {
         sessionStats.seen.add(histKey);
-        recordHistory(f);
+        recordHistory(f, text);
       }
     }
 
@@ -692,6 +692,28 @@
           <button class="gramr-nav-btn" data-nav="1" aria-label="Next issue">›</button>
         </span>` : "";
 
+    // Prove-it mode (opt-in): on rules still being learned, Apply is gated
+    // behind picking the correct form — the choices are the user's own text
+    // vs the correction, so every check uses their real sentence
+    const matchedText = findingsTarget
+      ? getText(findingsTarget).slice(finding.index, finding.index + finding.length)
+      : "";
+    const needsProof = prefs.proveIt && hasCorrection && finding.correction !== "" &&
+      kind === "gap" && band === "learning" && matchedText &&
+      matchedText.toLowerCase() !== finding.correction.toLowerCase();
+    const proveChoices = needsProof
+      ? (Math.random() < 0.5
+          ? [["wrong", matchedText], ["right", finding.correction]]
+          : [["right", finding.correction], ["wrong", matchedText]])
+      : [];
+    const proveHtml = needsProof ? `
+        <div class="gramr-prove">
+          <div class="gramr-prove-title">🧠 Which is correct?</div>
+          ${proveChoices.map(([kindC, txt]) =>
+            `<button class="gramr-prove-btn" data-prove-choice="${kindC}">${escHtml(txt)}</button>`).join("")}
+          <div class="gramr-prove-hint" data-prove-hint hidden></div>
+        </div>` : "";
+
     tip.innerHTML = `
       <div class="gramr-tip-header" style="border-left-color:${severityColor}">
         <span class="gramr-tip-icon" style="color:${severityColor}">${severityIcon}</span>
@@ -701,8 +723,9 @@
       </div>
       <div class="gramr-tip-body">
         <p class="gramr-tip-message">${escHtml(finding.message)}</p>
+        ${proveHtml}
         ${hasCorrection ? `
-        <button class="gramr-apply-btn" data-apply="1">
+        <button class="gramr-apply-btn" data-apply="1"${needsProof ? " hidden" : ""}>
           <span class="gramr-apply-check">✓</span>
           <span class="gramr-apply-text">Apply correction</span>
           <span class="gramr-apply-preview">${escHtml(corrPreview)}</span>
@@ -742,6 +765,31 @@
         e.stopPropagation();
         applyCorrection(finding, tip);
       });
+    }
+
+    if (needsProof) {
+      const applyBtn = tip.querySelector("[data-apply]");
+      const hint = tip.querySelector("[data-prove-hint]");
+      for (const pb of tip.querySelectorAll("[data-prove-choice]")) {
+        pb.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const right = pb.dataset.proveChoice === "right";
+          for (const b of tip.querySelectorAll("[data-prove-choice]")) {
+            b.disabled = true;
+            if (b.dataset.proveChoice === "right") b.classList.add("gramr-prove-btn--right");
+          }
+          if (!right) pb.classList.add("gramr-prove-btn--wrong");
+          hint.hidden = false;
+          if (right) {
+            hint.textContent = "✓ Correct!";
+            applyBtn.hidden = false;
+            applyCorrection(finding, tip);
+          } else {
+            hint.textContent = `✗ Not quite — “${finding.correction}” is correct. ${finding.fix}`;
+            applyBtn.hidden = false; // let them apply now that they've seen the answer
+          }
+        });
+      }
     }
 
     tip.querySelector("[data-ignore]").addEventListener("click", (e) => {
@@ -883,9 +931,28 @@
   let historyBuffer = {};
   let historyFlushTimer = null;
 
-  function recordHistory(f) {
+  // The sentence fragment around a finding — stored locally so lessons and
+  // practice questions can quote the user's own writing back to them
+  function snippetFor(text, f) {
+    const bounds = /[.!?\n]/;
+    let start = f.index;
+    while (start > 0 && start > f.index - 120 && !bounds.test(text[start - 1])) start--;
+    let end = f.index + f.length;
+    while (end < text.length && end < f.index + f.length + 120 && !bounds.test(text[end])) end++;
+    let snip = text.slice(start, Math.min(end + 1, text.length)).trim();
+    if (snip.length > 90) {
+      const mid = f.index - start;
+      const from = Math.max(0, mid - 25);
+      snip = (from > 0 ? "…" : "") + snip.slice(from, from + 80).trim() + "…";
+    }
+    return snip;
+  }
+
+  function recordHistory(f, text) {
     const entry = historyBuffer[f.type] || (historyBuffer[f.type] = { count: 0, label: f.label, severity: f.severity });
     entry.count++;
+    const snip = snippetFor(text, f);
+    if (snip) entry.examples = [snip];
     clearTimeout(historyFlushTimer);
     historyFlushTimer = setTimeout(flushHistory, 1500);
   }
@@ -902,6 +969,7 @@
         h.label = v.label;
         h.severity = v.severity;
         h.last = Date.now();
+        if (v.examples) h.examples = v.examples.concat(h.examples || []).slice(0, 2);
         h.weeks = h.weeks || {};
         h.weeks[week] = (h.weeks[week] || 0) + v.count;
         // Keep only the last 8 weeks of buckets

@@ -258,7 +258,7 @@ dialectSelect.addEventListener("change", () => {
 });
 
 // ── Optional-feature preferences ────────────────────────────────────────────
-const PREF_DEFAULTS = { gamification: true, badges: true, focus: true, history: true, adaptive: true, quiz: true };
+const PREF_DEFAULTS = { gamification: true, badges: true, focus: true, history: true, adaptive: true, quiz: true, proveIt: false };
 let prefs = { ...PREF_DEFAULTS };
 const prefInputs = {
   gamification: document.getElementById("optGamification"),
@@ -267,6 +267,7 @@ const prefInputs = {
   history: document.getElementById("optHistory"),
   adaptive: document.getElementById("optAdaptive"),
   quiz: document.getElementById("optQuiz"),
+  proveIt: document.getElementById("optProveIt"),
 };
 
 chrome.storage.sync.get({ prefs: PREF_DEFAULTS }, (res) => {
@@ -368,6 +369,12 @@ function loadProgress() {
         card.hidden = false;
         document.getElementById("focusRule").textContent =
           history[focus.ruleId]?.label || focus.ruleId;
+        const fex = history[focus.ruleId]?.examples?.[0];
+        const fexEl = document.getElementById("focusExample");
+        if (fex) {
+          fexEl.hidden = false;
+          fexEl.textContent = `You wrote: “${fex}”`;
+        }
         document.getElementById("focusLesson").textContent = LESSONS[focus.ruleId].lesson;
         document.getElementById("focusTrick").textContent = "💡 " + LESSONS[focus.ruleId].trick;
       }
@@ -383,7 +390,7 @@ function loadProgress() {
         const due = Object.entries(quiz)
           .filter(([t, s]) => s.next <= now && QUIZ[t])
           .sort((a, b) => a[1].next - b[1].next);
-        if (due.length) renderQuizCard(due[0][0], quiz);
+        if (due.length) renderQuizCard(due[0][0], quiz, history);
       }
 
       chrome.storage.local.set({ xp, bands, focus, quiz });
@@ -455,9 +462,17 @@ chrome.runtime.onMessage.addListener((msg) => {
 // ── Quiz card ───────────────────────────────────────────────────────────────
 let quizAnsweredThisOpen = false;
 
-function renderQuizCard(type, quizState) {
+function renderQuizCard(type, quizState, history) {
   const def = QUIZ[type];
   document.getElementById("quizCard").hidden = false;
+  const ctx = document.getElementById("quizContext");
+  const example = history?.[type]?.examples?.[0];
+  if (example) {
+    ctx.hidden = false;
+    ctx.textContent = `From your writing: “${example}”`;
+  } else {
+    ctx.hidden = true;
+  }
   document.getElementById("quizQ").textContent = def.q;
   document.getElementById("quizResult").hidden = true;
   const box = document.getElementById("quizChoices");

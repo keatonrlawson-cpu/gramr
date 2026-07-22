@@ -63,6 +63,7 @@
     <section class="focus-card" id="focusCard" hidden>
       <div class="focus-head">🎯 This week's focus</div>
       <div class="focus-rule" id="focusRule"></div>
+      <p class="focus-example" id="focusExample" hidden></p>
       <p class="focus-lesson" id="focusLesson"></p>
       <p class="focus-trick" id="focusTrick"></p>
     </section>
@@ -70,6 +71,7 @@
     <!-- Quick practice (spaced repetition) -->
     <section class="quiz-card" id="quizCard" hidden>
       <div class="quiz-head">🧠 Quick practice</div>
+      <p class="quiz-context" id="quizContext" hidden></p>
       <p class="quiz-q" id="quizQ"></p>
       <div class="quiz-choices" id="quizChoices"></div>
       <p class="quiz-result" id="quizResult" hidden></p>
@@ -123,6 +125,7 @@
         <label class="opt-row"><input type="checkbox" id="optQuiz" checked /> Practice questions</label>
         <label class="opt-row"><input type="checkbox" id="optHistory" checked /> Mistake history</label>
         <label class="opt-row"><input type="checkbox" id="optAdaptive" checked /> Adaptive tooltips (shorter as you improve)</label>
+        <label class="opt-row"><input type="checkbox" id="optProveIt" /> Prove-it mode (answer a quick check before Apply)</label>
       </details>
     </section>
 

@@ -236,6 +236,13 @@ body {
   color: var(--text);
   margin-bottom: 4px;
 }
+.focus-example {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+  margin-bottom: 5px;
+}
 .focus-lesson {
   font-size: 11.5px;
   color: var(--text-sub);
@@ -267,6 +274,13 @@ body {
   font-weight: 700;
   color: var(--green);
   margin-bottom: 5px;
+}
+.quiz-context {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.5;
+  margin-bottom: 6px;
 }
 .quiz-q {
   font-size: 12.5px;
