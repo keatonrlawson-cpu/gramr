@@ -82,6 +82,35 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+.gramr-tip-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.gramr-nav-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 5px;
+  color: #a6adc8;
+  font-size: 13px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s, border-color 0.12s;
+}
+.gramr-nav-btn:hover {
+  color: #cdd6f4;
+  border-color: rgba(255,255,255,0.3);
+}
+.gramr-nav-count {
+  font-size: 10.5px;
+  color: #6c7086;
+  padding: 0 4px;
+  white-space: nowrap;
+}
 .gramr-tip-close {
   background: none;
   border: none;

@@ -140,6 +140,9 @@
     // field itself (scroll doesn't bubble, but capture still sees it).
     window.addEventListener("scroll", onViewportChange, { capture: true, passive: true });
     window.addEventListener("resize", onViewportChange, { passive: true });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && activeTooltip) closeTooltip();
+    }, true);
   }
 
   function onViewportChange(e) {
@@ -331,6 +334,8 @@
       seen.add(key);
       return true;
     });
+    // Document order, so tooltip prev/next moves naturally through the text
+    findings.sort((a, b) => a.index - b.index);
 
     // Record newly seen findings in the mistake history (once per unique occurrence)
     for (const f of findings) {
@@ -478,12 +483,7 @@
         continue;
       }
 
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", wavyPath(relLeft, y, w));
-      path.setAttribute("stroke", color);
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("fill", "none");
-      svg.appendChild(path);
+      svg.appendChild(underlinePath(relLeft, y, w, finding.severity, color));
 
       // Invisible click target
       const clickTarget = document.createElement("div");
@@ -562,12 +562,7 @@
         const y = relTop + r.height - 2;
         if (y < 0 || y > rect.height || relLeft + r.width < 0 || relLeft > rect.width) continue;
 
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", wavyPath(relLeft, y, r.width));
-        path.setAttribute("stroke", color);
-        path.setAttribute("stroke-width", "2");
-        path.setAttribute("fill", "none");
-        svg.appendChild(path);
+        svg.appendChild(underlinePath(relLeft, y, r.width, finding.severity, color));
 
         const clickTarget = document.createElement("div");
         Object.assign(clickTarget.style, {
@@ -632,6 +627,23 @@
     document.body.appendChild(highlightContainer);
   }
 
+  // Severity is encoded in the pattern, not just the color, so color-blind
+  // users can tell them apart: error = wavy, warning = dashed, info = dotted
+  function underlinePath(x, y, width, severity, color) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    if (severity === "error") {
+      path.setAttribute("d", wavyPath(x, y, width));
+    } else {
+      path.setAttribute("d", `M ${x} ${y} L ${x + width} ${y}`);
+      path.setAttribute("stroke-dasharray", severity === "warning" ? "6 3" : "2 4");
+      if (severity !== "warning") path.setAttribute("stroke-linecap", "round");
+    }
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+    return path;
+  }
+
   function wavyPath(x, y, width) {
     const amp = 2;
     const freq = 6;
@@ -672,11 +684,19 @@
       ? '<span class="gramr-tip-band" title="You rarely make this mistake anymore">⭐ mastered</span>'
       : "";
 
+    const navIdx = findings.indexOf(finding);
+    const navHtml = findings.length > 1 && navIdx !== -1 ? `
+        <span class="gramr-tip-nav">
+          <button class="gramr-nav-btn" data-nav="-1" aria-label="Previous issue">‹</button>
+          <span class="gramr-nav-count">${navIdx + 1}/${findings.length}</span>
+          <button class="gramr-nav-btn" data-nav="1" aria-label="Next issue">›</button>
+        </span>` : "";
+
     tip.innerHTML = `
       <div class="gramr-tip-header" style="border-left-color:${severityColor}">
         <span class="gramr-tip-icon" style="color:${severityColor}">${severityIcon}</span>
         <span class="gramr-tip-label">${escHtml(finding.label)}</span>
-        ${masteredChip}
+        ${masteredChip}${navHtml}
         <button class="gramr-tip-close" aria-label="Close">×</button>
       </div>
       <div class="gramr-tip-body">
@@ -707,6 +727,15 @@
       e.stopPropagation();
       closeTooltip();
     });
+
+    for (const nb of tip.querySelectorAll("[data-nav]")) {
+      nb.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const delta = Number(nb.dataset.nav);
+        const next = findings[(navIdx + delta + findings.length) % findings.length];
+        if (next) showTooltip(next, clientX, clientY);
+      });
+    }
 
     if (hasCorrection) {
       tip.querySelector("[data-apply]").addEventListener("click", (e) => {

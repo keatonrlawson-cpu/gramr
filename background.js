@@ -1,7 +1,10 @@
 // Gramr service worker
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.sync.set({ enabled: true });
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    chrome.storage.sync.set({ enabled: true });
+    chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") });
+  }
 });
 
 // Relay messages from content scripts to the popup if it's open

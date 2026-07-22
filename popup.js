@@ -140,6 +140,45 @@ const LESSONS = {
   "me-subject":         { lesson: "The doer of the action is “I,” not “me” — and the other person goes first: “Sarah and I went.”", trick: "Drop the other person: “Me went” fails, “I went” works." },
 };
 
+// ── Practice questions (spaced repetition, one per rule) ────────────────────
+// choices[0] is always the correct answer; order is shuffled at render time.
+const QUIZ = {
+  "its-its":            { q: "The dog wagged ___ tail.", choices: ["its", "it's"] },
+  "there-their-theyre": { q: "___ going to love this.", choices: ["They're", "Their", "There"] },
+  "your-youre":         { q: "___ the best!", choices: ["You're", "Your"] },
+  "modal-of":           { q: "You should ___ seen it.", choices: ["have", "of"] },
+  "then-than":          { q: "She's taller ___ me.", choices: ["than", "then"] },
+  "to-too":             { q: "It's ___ late to call now.", choices: ["too", "to"] },
+  "a-an":               { q: "She earned ___ MBA last year.", choices: ["an", "a"] },
+  "comma-splice":       { q: "Which is correct?", choices: ["I ran home. It rained.", "I ran home, it rained."] },
+  "intro-clause-comma": { q: "Which is correct?", choices: ["However, the test failed.", "However the test failed."] },
+  "affect-effect":      { q: "The rain didn't ___ my mood.", choices: ["affect", "effect"] },
+  "who-whom":           { q: "To ___ should I address this?", choices: ["whom", "who"] },
+  "fewer-less":         { q: "We had ___ errors this week.", choices: ["fewer", "less"] },
+  "loose-lose":         { q: "Don't ___ your keys.", choices: ["lose", "loose"] },
+  "accept-except":      { q: "Everyone came ___ Dan.", choices: ["except", "accept"] },
+  "good-well":          { q: "“How are you?” “I'm doing ___.”", choices: ["well", "good"] },
+  "pronoun-case":       { q: "Between you and ___, it's a secret.", choices: ["me", "I"] },
+  "complement-compliment": { q: "The wine ___s the fish nicely.", choices: ["complement", "compliment"] },
+  "principal-principle": { q: "It's a matter of ___.", choices: ["principle", "principal"] },
+  "further-farther":    { q: "We drove ___ down the road.", choices: ["farther", "further"] },
+  "imply-infer":        { q: "From her tone, I ___red she was upset.", choices: ["infer", "imply"] },
+  "lay-lie":            { q: "I'm dizzy — I need to ___ down.", choices: ["lie", "lay"] },
+  "double-negative":    { q: "Correct: “I don't know ___ about it.”", choices: ["anything", "nothing"] },
+  "subject-verb":       { q: "The box of tools ___ heavy.", choices: ["is", "are"] },
+  "tense-shift":        { q: "Yesterday she ___ to work.", choices: ["walked", "walks"] },
+  "past-participle":    { q: "I have ___ there before.", choices: ["gone", "went"] },
+  "double-comparative": { q: "This design is ___.", choices: ["better", "more better"] },
+  "whose-whos":         { q: "___ coat is this?", choices: ["Whose", "Who's"] },
+  "could-care-less":    { q: "The idiom: “I ___ care less.”", choices: ["couldn't", "could"] },
+  "amount-number":      { q: "A large ___ of people came.", choices: ["number", "amount"] },
+  "between-and":        { q: "Pick a number between 1 ___ 10.", choices: ["and", "to"] },
+  "me-subject":         { q: "___ went to the park.", choices: ["Sarah and I", "Me and Sarah"] },
+};
+
+// Leitner boxes: review after 1 / 3 / 7 / 21 days
+const QUIZ_INTERVALS = { 1: 1, 2: 3, 3: 7, 4: 21 };
+
 const toggle = document.getElementById("enableToggle");
 const app = document.querySelector(".app");
 const errCount = document.getElementById("errCount");
@@ -219,7 +258,7 @@ dialectSelect.addEventListener("change", () => {
 });
 
 // ── Optional-feature preferences ────────────────────────────────────────────
-const PREF_DEFAULTS = { gamification: true, badges: true, focus: true, history: true, adaptive: true };
+const PREF_DEFAULTS = { gamification: true, badges: true, focus: true, history: true, adaptive: true, quiz: true };
 let prefs = { ...PREF_DEFAULTS };
 const prefInputs = {
   gamification: document.getElementById("optGamification"),
@@ -227,6 +266,7 @@ const prefInputs = {
   focus: document.getElementById("optFocus"),
   history: document.getElementById("optHistory"),
   adaptive: document.getElementById("optAdaptive"),
+  quiz: document.getElementById("optQuiz"),
 };
 
 chrome.storage.sync.get({ prefs: PREF_DEFAULTS }, (res) => {
@@ -237,7 +277,7 @@ chrome.storage.sync.get({ prefs: PREF_DEFAULTS }, (res) => {
       prefs[key] = input.checked;
       chrome.storage.sync.set({ prefs });
       applyPrefVisibility();
-      if (input.checked && (key === "history" || key === "focus" || key === "gamification" || key === "badges")) {
+      if (input.checked && (key === "history" || key === "focus" || key === "gamification" || key === "badges" || key === "quiz")) {
         loadProgress(); // re-render sections that were hidden
       }
     });
@@ -250,18 +290,20 @@ function applyPrefVisibility() {
   document.getElementById("progressSection").hidden = !prefs.gamification;
   if (!prefs.focus) document.getElementById("focusCard").hidden = true;
   if (!prefs.history) historySection.hidden = true;
+  if (!prefs.quiz) document.getElementById("quizCard").hidden = true;
 }
 clearHistoryBtn.addEventListener("click", () => {
-  chrome.storage.local.set({ history: {}, correctionsApplied: 0, bands: {}, focus: null });
+  chrome.storage.local.set({ history: {}, correctionsApplied: 0, bands: {}, focus: null, quiz: {} });
   historySection.hidden = true;
   document.getElementById("focusCard").hidden = true;
+  document.getElementById("quizCard").hidden = true;
 });
 
 function loadProgress() {
   chrome.storage.local.get(
-    { history: {}, correctionsApplied: 0, xp: 0, streak: { current: 0, best: 0, lastDay: null }, bands: {}, focus: null },
+    { history: {}, correctionsApplied: 0, xp: 0, streak: { current: 0, best: 0, lastDay: null }, bands: {}, focus: null, quiz: {} },
     (data) => {
-      const { history, correctionsApplied, streak, bands } = data;
+      const { history, correctionsApplied, streak, bands, quiz } = data;
       let { xp, focus } = data;
       const now = Date.now();
       const week = Math.floor(now / 604800000);
@@ -331,7 +373,20 @@ function loadProgress() {
       }
       } // end focus
 
-      chrome.storage.local.set({ xp, bands, focus });
+      // ── Practice question: rules you've erred on enter the review pool a
+      // day later; right answers push the next review further out ──
+      if (prefs.quiz && !quizAnsweredThisOpen) {
+        for (const [type, h] of Object.entries(history)) {
+          if (ruleKind(type) !== "gap" || !QUIZ[type] || quiz[type] || !h.count) continue;
+          quiz[type] = { box: 1, next: now + 86400000, right: 0, wrong: 0 };
+        }
+        const due = Object.entries(quiz)
+          .filter(([t, s]) => s.next <= now && QUIZ[t])
+          .sort((a, b) => a[1].next - b[1].next);
+        if (due.length) renderQuizCard(due[0][0], quiz);
+      }
+
+      chrome.storage.local.set({ xp, bands, focus, quiz });
 
       // ── Top mistakes list with mastery badges and weekly trends ──
       if (!prefs.history) return;
@@ -396,6 +451,76 @@ toggle.addEventListener("change", () => {
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "stats") updateStats(msg.stats);
 });
+
+// ── Quiz card ───────────────────────────────────────────────────────────────
+let quizAnsweredThisOpen = false;
+
+function renderQuizCard(type, quizState) {
+  const def = QUIZ[type];
+  document.getElementById("quizCard").hidden = false;
+  document.getElementById("quizQ").textContent = def.q;
+  document.getElementById("quizResult").hidden = true;
+  const box = document.getElementById("quizChoices");
+  box.innerHTML = "";
+  const correct = def.choices[0];
+  const shuffled = [...def.choices].sort(() => Math.random() - 0.5);
+  for (const choice of shuffled) {
+    const b = document.createElement("button");
+    b.className = "quiz-choice";
+    b.textContent = choice;
+    b.addEventListener("click", () => answerQuiz(type, choice === correct, quizState, b, correct));
+    box.appendChild(b);
+  }
+}
+
+function answerQuiz(type, correct, quizState, btn, correctText) {
+  if (quizAnsweredThisOpen) return;
+  quizAnsweredThisOpen = true;
+  const s = quizState[type];
+  for (const b of document.querySelectorAll(".quiz-choice")) {
+    b.disabled = true;
+    if (!correct && b.textContent === correctText) b.classList.add("quiz-choice--right");
+  }
+  btn.classList.add(correct ? "quiz-choice--right" : "quiz-choice--wrong");
+  if (correct) {
+    s.box = Math.min(4, (s.box || 1) + 1);
+    s.right = (s.right || 0) + 1;
+  } else {
+    s.box = 1;
+    s.wrong = (s.wrong || 0) + 1;
+  }
+  s.next = Date.now() + QUIZ_INTERVALS[s.box] * 86400000;
+
+  const result = document.getElementById("quizResult");
+  result.hidden = false;
+  if (correct) {
+    result.textContent = prefs.gamification ? "✓ Correct! +8 XP" : "✓ Correct!";
+    result.className = "quiz-result quiz-result--right";
+  } else {
+    const trick = LESSONS[type] ? LESSONS[type].trick : "";
+    result.textContent = "✗ Not quite. 💡 " + trick;
+    result.className = "quiz-result quiz-result--wrong";
+  }
+
+  chrome.storage.local.get({ quiz: {}, xp: 0 }, (res) => {
+    res.quiz[type] = s;
+    const update = { quiz: res.quiz };
+    if (correct && prefs.gamification) {
+      update.xp = res.xp + 8;
+      updateXpDisplay(update.xp);
+    }
+    chrome.storage.local.set(update);
+  });
+}
+
+function updateXpDisplay(xp) {
+  const lv = levelFor(xp);
+  document.getElementById("levelTitle").textContent = `Lv ${lv.n} · ${lv.title}`;
+  document.getElementById("xpText").textContent = `${xp} XP`;
+  const pct = Math.min(100, Math.round(((xp - lv.cur) / (lv.next - lv.cur)) * 100));
+  document.getElementById("xpBarFill").style.width = pct + "%";
+  document.getElementById("xpNext").textContent = `${lv.next - xp} XP to level ${lv.n + 1}`;
+}
 
 function applyEnabledState(enabled) {
   if (enabled) {
