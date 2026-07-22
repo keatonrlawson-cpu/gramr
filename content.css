@@ -71,6 +71,17 @@
   color: #cdd6f4;
   flex: 1;
 }
+.gramr-tip-band {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f9e2af;
+  background: rgba(249,226,175,0.12);
+  border: 1px solid rgba(249,226,175,0.3);
+  border-radius: 20px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .gramr-tip-close {
   background: none;
   border: none;

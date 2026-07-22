@@ -21,6 +21,42 @@
   let disabledRules = new Set();
   let ignoredFindings = new Set(); // "type:matched text" the user chose to ignore
   let lastCheckedText = null;
+  let historyLocal = {};           // mirror of chrome.storage.local history
+  let streakTouchedDay = null;
+
+  // ─── Learning model ──────────────────────────────────────────────────────────
+  // Every rule is a "slip" (typing accident — don't teach), a "habit" (style
+  // pattern — nudge gently), or a knowledge "gap" (teachable rule — the default).
+  const SLIP_RULES = new Set(["misspelling", "repeated-word"]);
+  const HABIT_RULES = new Set([
+    "wordy", "passive-voice", "oxford-comma", "try-and",
+    "dialect-spelling", "redundant-acronym",
+  ]);
+  function ruleKind(type) {
+    if (SLIP_RULES.has(type)) return "slip";
+    if (HABIT_RULES.has(type)) return "habit";
+    return "gap";
+  }
+
+  // Mastery 0–1 from the rule's history: recent error rate pulls it down,
+  // quiet days and applied corrections push it up. New errors after a quiet
+  // stretch automatically drop the score again (regression reopens teaching).
+  function computeMastery(h, now = Date.now()) {
+    if (!h || !h.count) return 1;
+    const week = Math.floor(now / 604800000);
+    const w0 = (h.weeks && h.weeks[week]) || 0;
+    const w1 = (h.weeks && h.weeks[week - 1]) || 0;
+    const daysQuiet = h.last ? (now - h.last) / 86400000 : 999;
+    let base = 1 - Math.min(1, w0 * 0.2 + w1 * 0.1);
+    base += 0.15 * Math.min(1, (h.applied || 0) / h.count);
+    base = Math.min(1, base);
+    const quietFactor = Math.min(1, 0.5 + daysQuiet * 0.07);
+    return Math.max(0, Math.min(1, base * quietFactor));
+  }
+
+  function bandFor(score) {
+    return score < 0.4 ? "learning" : score < 0.8 ? "improving" : "mastered";
+  }
 
   // ─── Settings ────────────────────────────────────────────────────────────────
   const DEBOUNCE_MS = 800;
@@ -41,8 +77,9 @@
       if (enabled && !siteDisabled) attachListeners();
     }
   );
-  chrome.storage.local.get({ ignoredFindings: [] }, (res) => {
+  chrome.storage.local.get({ ignoredFindings: [], history: {} }, (res) => {
     ignoredFindings = new Set(res.ignoredFindings);
+    historyLocal = res.history;
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -74,8 +111,9 @@
         recheck();
       }
     }
-    if (area === "local" && changes.ignoredFindings) {
-      ignoredFindings = new Set(changes.ignoredFindings.newValue);
+    if (area === "local") {
+      if (changes.ignoredFindings) ignoredFindings = new Set(changes.ignoredFindings.newValue);
+      if (changes.history) historyLocal = changes.history.newValue || {};
     }
   });
 
@@ -189,6 +227,7 @@
       removeAllHighlights();
       return;
     }
+    touchStreak();
 
     // For very long texts, analyze a window around the cursor (snapped to
     // paragraph boundaries) instead of the whole document.
@@ -471,10 +510,21 @@
           : `"${finding.correction.length > 28 ? finding.correction.slice(0, 28) + "…" : finding.correction}"`)
       : "";
 
+    // Fading scaffolds: how much teaching this tooltip shows depends on how
+    // well the user knows this rule. Slips get minimal treatment always.
+    const kind = ruleKind(finding.type);
+    const band = kind === "slip" ? "slip" : bandFor(computeMastery(historyLocal[finding.type]));
+    const whyOpen = band === "learning";           // full lesson for rules still being learned
+    const showLessonSections = band !== "slip";    // slips: message + actions only
+    const masteredChip = band === "mastered"
+      ? '<span class="gramr-tip-band" title="You rarely make this mistake anymore">⭐ mastered</span>'
+      : "";
+
     tip.innerHTML = `
       <div class="gramr-tip-header" style="border-left-color:${severityColor}">
         <span class="gramr-tip-icon" style="color:${severityColor}">${severityIcon}</span>
         <span class="gramr-tip-label">${escHtml(finding.label)}</span>
+        ${masteredChip}
         <button class="gramr-tip-close" aria-label="Close">×</button>
       </div>
       <div class="gramr-tip-body">
@@ -486,14 +536,15 @@
           <span class="gramr-apply-preview">${escHtml(corrPreview)}</span>
         </button>` : ""}
         <button class="gramr-ignore-btn" data-ignore="1" title="Stop flagging this exact word or phrase">Ignore — I meant this</button>
-        <details class="gramr-tip-details" open>
+        ${showLessonSections ? `
+        <details class="gramr-tip-details"${whyOpen ? " open" : ""}>
           <summary>Why does this matter?</summary>
           <p>${escHtml(finding.explanation)}</p>
         </details>
         <details class="gramr-tip-details">
           <summary>Examples</summary>
           <pre class="gramr-tip-example">${escHtml(finding.example)}</pre>
-        </details>
+        </details>` : ""}
         <div class="gramr-tip-fix">
           <strong>How to fix:</strong> ${escHtml(finding.fix)}
         </div>
@@ -575,7 +626,7 @@
       const btn = tipEl.querySelector("[data-apply]");
       if (btn) {
         btn.classList.add("gramr-apply-btn--done");
-        btn.querySelector(".gramr-apply-text").textContent = "Applied!";
+        btn.querySelector(".gramr-apply-text").textContent = "Applied! +5 XP";
       }
     }
 
@@ -599,8 +650,35 @@
       runCheck(el);
     }, 350);
 
-    chrome.storage.local.get({ correctionsApplied: 0 }, ({ correctionsApplied }) => {
-      chrome.storage.local.set({ correctionsApplied: correctionsApplied + 1 });
+    // +5 XP per fix; also count the fix against this rule for the mastery model
+    chrome.storage.local.get(
+      { correctionsApplied: 0, xp: 0, history: {} },
+      ({ correctionsApplied, xp, history }) => {
+        const h = history[finding.type] || { count: 1, label: finding.label, severity: finding.severity };
+        h.applied = (h.applied || 0) + 1;
+        history[finding.type] = h;
+        chrome.storage.local.set({ correctionsApplied: correctionsApplied + 1, xp: xp + 5, history });
+      }
+    );
+  }
+
+  // ─── Daily streak ─────────────────────────────────────────────────────────────
+  function localDay(d) {
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  }
+
+  function touchStreak() {
+    const day = localDay(new Date());
+    if (streakTouchedDay === day) return;
+    streakTouchedDay = day;
+    chrome.storage.local.get({ streak: { current: 0, best: 0, lastDay: null }, xp: 0 }, ({ streak, xp }) => {
+      if (streak.lastDay === day) return; // another tab already counted today
+      const yday = localDay(new Date(Date.now() - 86400000));
+      streak.current = streak.lastDay === yday ? streak.current + 1 : 1;
+      streak.best = Math.max(streak.best, streak.current);
+      streak.lastDay = day;
+      // Daily activity XP, with a growing streak bonus (capped at +7)
+      chrome.storage.local.set({ streak, xp: xp + 3 + Math.min(streak.current, 7) });
     });
   }
 

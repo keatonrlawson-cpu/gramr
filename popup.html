@@ -41,10 +41,31 @@
       </div>
     </section>
 
+    <!-- Progress: level, XP, streak -->
+    <section class="progress" id="progressSection">
+      <div class="progress-top">
+        <span class="progress-title" id="levelTitle">Novice</span>
+        <span class="progress-streak" id="streakBadge" hidden>🔥 <span id="streakDays">0</span>-day streak</span>
+        <span class="progress-xp" id="xpText">0 XP</span>
+      </div>
+      <div class="xp-bar">
+        <div class="xp-bar-fill" id="xpBarFill"></div>
+      </div>
+      <div class="progress-sub" id="xpNext"></div>
+    </section>
+
     <!-- Status message -->
     <div class="status-msg" id="statusMsg">
       <span id="statusText">Click a text field and start typing to get feedback.</span>
     </div>
+
+    <!-- Focus of the week -->
+    <section class="focus-card" id="focusCard" hidden>
+      <div class="focus-head">🎯 This week's focus</div>
+      <div class="focus-rule" id="focusRule"></div>
+      <p class="focus-lesson" id="focusLesson"></p>
+      <p class="focus-trick" id="focusTrick"></p>
+    </section>
 
     <!-- Dialect selector -->
     <section class="setting-row">
