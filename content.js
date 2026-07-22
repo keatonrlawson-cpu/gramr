@@ -206,8 +206,66 @@
   }
 
   function getText(el) {
-    if (el.isContentEditable) return el.innerText || "";
+    if (el.isContentEditable) return buildEditableMap(el).text;
     return el.value || "";
+  }
+
+  // Canonical text extraction for contenteditable: walks the DOM building the
+  // exact string we analyze AND a map from string offsets back to text nodes.
+  // (innerText's newline rules differ from text-node concatenation, so using it
+  // for analysis while walking nodes for replacement causes offset drift.)
+  const BLOCK_TAGS = new Set([
+    "DIV", "P", "LI", "BLOCKQUOTE", "PRE", "H1", "H2", "H3", "H4", "H5", "H6",
+    "TR", "SECTION", "ARTICLE", "HEADER", "FOOTER", "ASIDE", "FIGCAPTION",
+  ]);
+  const SKIP_TAGS = new Set(["STYLE", "SCRIPT", "NOSCRIPT", "TEMPLATE"]);
+
+  function buildEditableMap(el) {
+    const parts = [];
+    const map = [];   // { node, start, length } per text node
+    let pos = 0;
+    (function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = node.textContent;
+        if (t.length) {
+          map.push({ node, start: pos, length: t.length });
+          parts.push(t);
+          pos += t.length;
+        }
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE || SKIP_TAGS.has(node.tagName)) return;
+      if (node.tagName === "BR") {
+        parts.push("\n");
+        pos += 1;
+        return;
+      }
+      for (const child of node.childNodes) walk(child);
+      if (BLOCK_TAGS.has(node.tagName) && pos > 0 && parts[parts.length - 1] !== "\n" && !parts[parts.length - 1].endsWith("\n")) {
+        parts.push("\n");
+        pos += 1;
+      }
+    })(el);
+    return { text: parts.join(""), map };
+  }
+
+  // String offset → {node, offset}. Offsets landing on synthetic newlines snap
+  // to the end of the previous node (for range ends) or the next node's start.
+  function posToNodeOffset(map, index, isEnd) {
+    for (let i = 0; i < map.length; i++) {
+      const e = map[i];
+      if (index < e.start) {
+        return isEnd && i > 0
+          ? { node: map[i - 1].node, offset: map[i - 1].length }
+          : { node: e.node, offset: 0 };
+      }
+      if (index <= e.start + e.length) {
+        if (index === e.start + e.length && !isEnd && i + 1 < map.length) continue;
+        return { node: e.node, offset: index - e.start };
+      }
+    }
+    const last = map[map.length - 1];
+    return last ? { node: last.node, offset: isEnd ? last.length : last.length } : null;
   }
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
@@ -452,10 +510,97 @@
   }
 
   function renderContentEditableHighlights(el, allFindings) {
-    // For contenteditable, use a simpler approach: show a floating badge
     const rect = el.getBoundingClientRect();
-    if (!rect.width) return;
+    if (!rect.width || !rect.height) return;
 
+    const { map } = buildEditableMap(el);
+
+    // Same overlay pair as inputs: SVG for the squiggles, div for click targets,
+    // both fixed at the element's viewport rect with overflow clipping.
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    Object.assign(svg.style, {
+      position: "fixed",
+      top: rect.top + "px",
+      left: rect.left + "px",
+      width: rect.width + "px",
+      height: rect.height + "px",
+      pointerEvents: "none",
+      zIndex: "2147483640",
+      overflow: "hidden",
+    });
+
+    const container = document.createElement("div");
+    container.dataset.gramrContainer = "1";
+    Object.assign(container.style, {
+      position: "fixed",
+      top: rect.top + "px",
+      left: rect.left + "px",
+      width: rect.width + "px",
+      height: rect.height + "px",
+      pointerEvents: "none",
+      zIndex: "2147483641",
+      overflow: "hidden",
+    });
+
+    let drawn = 0;
+    for (const finding of allFindings) {
+      const startPos = posToNodeOffset(map, finding.index, false);
+      const endPos = posToNodeOffset(map, finding.index + finding.length, true);
+      if (!startPos || !endPos) continue;
+      const range = document.createRange();
+      try {
+        range.setStart(startPos.node, startPos.offset);
+        range.setEnd(endPos.node, endPos.offset);
+      } catch (_) {
+        continue;
+      }
+      const color = SEVERITY_COLORS[finding.severity] || "#6b7280";
+      for (const r of range.getClientRects()) {
+        if (!r.width || !r.height) continue;
+        const relLeft = r.left - rect.left;
+        const relTop = r.top - rect.top;
+        const y = relTop + r.height - 2;
+        if (y < 0 || y > rect.height || relLeft + r.width < 0 || relLeft > rect.width) continue;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", wavyPath(relLeft, y, r.width));
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "2");
+        path.setAttribute("fill", "none");
+        svg.appendChild(path);
+
+        const clickTarget = document.createElement("div");
+        Object.assign(clickTarget.style, {
+          position: "absolute",
+          top: relTop + "px",
+          left: relLeft + "px",
+          width: Math.max(r.width, 10) + "px",
+          height: r.height + "px",
+          cursor: "pointer",
+          pointerEvents: "all",
+        });
+        clickTarget.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showTooltip(finding, e.clientX, e.clientY);
+        });
+        container.appendChild(clickTarget);
+        drawn++;
+      }
+    }
+
+    if (!drawn) {
+      // Range resolution failed (exotic editor DOM) — fall back to the badge
+      renderBadgeFallback(el, rect, allFindings);
+      return;
+    }
+
+    overlaySvg = svg;
+    highlightContainer = container;
+    document.body.appendChild(svg);
+    document.body.appendChild(container);
+  }
+
+  function renderBadgeFallback(el, rect, allFindings) {
     highlightContainer = document.createElement("div");
     highlightContainer.dataset.gramrContainer = "1";
     Object.assign(highlightContainer.style, {
@@ -646,11 +791,24 @@
       if (el.isContentEditable) {
         replaceInContentEditable(el, finding.index, finding.length, finding.correction);
       } else {
+        // Select the target text and use execCommand so the browser's undo
+        // stack survives — assigning .value would wipe it
         const cursorPos = finding.index + finding.correction.length;
-        el.value = newText;
+        el.focus();
+        let ok = false;
+        try {
+          el.setSelectionRange(finding.index, finding.index + finding.length);
+          ok = document.execCommand(
+            finding.correction === "" ? "delete" : "insertText",
+            false,
+            finding.correction || undefined
+          );
+        } catch (_) {}
+        if (!ok && getText(el) !== newText) {
+          el.value = newText; // fallback (kills undo, but the text is right)
+        }
         try { el.setSelectionRange(cursorPos, cursorPos); } catch (_) {}
         el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.focus();
       }
       closeTooltip();
       clearTimeout(debounceTimer);
@@ -729,24 +887,11 @@
 
   function replaceInContentEditable(el, index, length, replacement) {
     el.focus();
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
-    let node, offset = 0, startNode = null, startOff = 0, endNode = null, endOff = 0;
+    const { map } = buildEditableMap(el);
+    const startPos = posToNodeOffset(map, index, false);
+    const endPos = posToNodeOffset(map, index + length, true);
 
-    while ((node = walker.nextNode())) {
-      const len = node.textContent.length;
-      if (!startNode && offset + len > index) {
-        startNode = node;
-        startOff = index - offset;
-      }
-      if (!endNode && offset + len >= index + length) {
-        endNode = node;
-        endOff = index + length - offset;
-      }
-      if (startNode && endNode) break;
-      offset += len;
-    }
-
-    if (!startNode || !endNode) {
+    if (!startPos || !endPos) {
       // Fallback: replace innerText directly
       el.innerText = getText(el).slice(0, index) + replacement + getText(el).slice(index + length);
       el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -754,13 +899,17 @@
     }
 
     const range = document.createRange();
-    range.setStart(startNode, startOff);
-    range.setEnd(endNode, endOff);
+    try {
+      range.setStart(startPos.node, startPos.offset);
+      range.setEnd(endPos.node, endPos.offset);
+    } catch (_) {
+      return;
+    }
     const sel = window.getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
     // execCommand keeps undo history in the browser
-    document.execCommand("insertText", false, replacement);
+    document.execCommand(replacement === "" ? "delete" : "insertText", false, replacement || undefined);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
