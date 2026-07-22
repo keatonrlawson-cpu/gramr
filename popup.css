@@ -252,6 +252,11 @@ body {
   color: var(--text-sub);
 }
 .history-label { flex: 1; }
+.history-trend {
+  font-size: 9px;
+}
+.history-trend--down { color: var(--green); }
+.history-trend--up { color: var(--red); }
 .history-count {
   font-weight: 700;
   font-size: 11.5px;
@@ -298,6 +303,50 @@ body {
   font-size: 12px;
   color: var(--text-sub);
   line-height: 1.3;
+}
+.rule-item--toggle {
+  cursor: pointer;
+  transition: border-color 0.12s, opacity 0.12s;
+}
+.rule-item--toggle:hover {
+  border-color: var(--accent);
+}
+.rule-name { flex: 1; }
+.rule-state {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--green);
+}
+.rule-item--off {
+  opacity: 0.45;
+}
+.rule-item--off .rule-state {
+  color: var(--text-muted);
+}
+.section-hint {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Small toggle variant (per-site row) */
+.toggle--small .toggle-track {
+  width: 32px;
+  height: 19px;
+}
+.toggle--small .toggle-thumb {
+  width: 11px;
+  height: 11px;
+}
+.toggle--small input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(13px);
+}
+.toggle--small input:checked + .toggle-track {
+  background: var(--red);
+  border-color: var(--red);
 }
 
 .rule-dot {

@@ -206,6 +206,25 @@
   pointer-events: none;
 }
 
+/* Ignore button */
+.gramr-ignore-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #6c7086;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s, border-color 0.15s;
+}
+.gramr-ignore-btn:hover {
+  color: #a6adc8;
+  border-color: rgba(255,255,255,0.25);
+}
+
 /* Scrollbar */
 .gramr-tooltip::-webkit-scrollbar {
   width: 4px;

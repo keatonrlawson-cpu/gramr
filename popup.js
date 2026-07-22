@@ -49,13 +49,59 @@ const historyList = document.getElementById("historyList");
 const historyApplied = document.getElementById("historyApplied");
 const clearHistoryBtn = document.getElementById("clearHistory");
 
-// Render rule list
-for (const rule of RULES_META) {
-  const li = document.createElement("li");
-  li.className = "rule-item";
-  li.innerHTML = `<span class="rule-dot rule-dot--${rule.severity}"></span>${escHtml(rule.label)}`;
-  ruleList.appendChild(li);
+// Render rule list (click a rule to enable/disable it)
+let disabledRules = new Set();
+chrome.storage.sync.get({ disabledRules: [] }, (res) => {
+  disabledRules = new Set(res.disabledRules);
+  renderRuleList();
+});
+
+function renderRuleList() {
+  ruleList.innerHTML = "";
+  for (const rule of RULES_META) {
+    const li = document.createElement("li");
+    const off = disabledRules.has(rule.id);
+    li.className = "rule-item rule-item--toggle" + (off ? " rule-item--off" : "");
+    li.title = off ? "Click to enable this check" : "Click to disable this check";
+    li.innerHTML = `<span class="rule-dot rule-dot--${rule.severity}"></span><span class="rule-name">${escHtml(rule.label)}</span><span class="rule-state">${off ? "off" : "on"}</span>`;
+    li.addEventListener("click", () => {
+      if (disabledRules.has(rule.id)) disabledRules.delete(rule.id);
+      else disabledRules.add(rule.id);
+      chrome.storage.sync.set({ disabledRules: [...disabledRules] });
+      renderRuleList();
+    });
+    ruleList.appendChild(li);
+  }
 }
+
+// Per-site disable toggle
+const siteRow = document.getElementById("siteRow");
+const siteHost = document.getElementById("siteHost");
+const siteToggle = document.getElementById("siteToggle");
+let currentHost = null;
+
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  try {
+    const url = new URL(tabs[0]?.url || "");
+    if (!["http:", "https:"].includes(url.protocol)) return;
+    currentHost = url.hostname;
+    siteHost.textContent = currentHost;
+    siteRow.hidden = false;
+    chrome.storage.sync.get({ disabledSites: [] }, ({ disabledSites }) => {
+      siteToggle.checked = disabledSites.includes(currentHost);
+    });
+  } catch (_) {}
+});
+
+siteToggle.addEventListener("change", () => {
+  if (!currentHost) return;
+  chrome.storage.sync.get({ disabledSites: [] }, ({ disabledSites }) => {
+    const set = new Set(disabledSites);
+    if (siteToggle.checked) set.add(currentHost);
+    else set.delete(currentHost);
+    chrome.storage.sync.set({ disabledSites: [...set] });
+  });
+});
 
 // Load saved state
 chrome.storage.sync.get({ enabled: true, dialect: "us" }, ({ enabled, dialect }) => {
@@ -84,18 +130,38 @@ function loadHistory() {
     }
     historySection.hidden = false;
     historyList.innerHTML = "";
+    const week = Math.floor(Date.now() / 604800000);
+    let totalThis = 0, totalLast = 0;
+    for (const h of Object.values(history)) {
+      totalThis += h.weeks?.[week] || 0;
+      totalLast += h.weeks?.[week - 1] || 0;
+    }
     for (const [type, h] of entries) {
+      const thisWk = h.weeks?.[week] || 0;
+      const lastWk = h.weeks?.[week - 1] || 0;
+      let trend = "";
+      if (lastWk > 0 && thisWk < lastWk) trend = `<span class="history-trend history-trend--down">▼</span>`;
+      else if (lastWk > 0 && thisWk > lastWk) trend = `<span class="history-trend history-trend--up">▲</span>`;
       const li = document.createElement("li");
       li.className = "history-item";
       li.innerHTML =
         `<span class="rule-dot rule-dot--${escHtml(h.severity || "info")}"></span>` +
         `<span class="history-label">${escHtml(h.label || type)}</span>` +
+        trend +
         `<span class="history-count">×${h.count}</span>`;
       historyList.appendChild(li);
     }
-    historyApplied.textContent = correctionsApplied
-      ? `✓ ${correctionsApplied} correction${correctionsApplied !== 1 ? "s" : ""} applied`
-      : "";
+    const parts = [];
+    if (correctionsApplied) {
+      parts.push(`✓ ${correctionsApplied} correction${correctionsApplied !== 1 ? "s" : ""} applied`);
+    }
+    if (totalLast > 0 && totalThis !== totalLast) {
+      const pct = Math.round(Math.abs(totalThis - totalLast) / totalLast * 100);
+      parts.push(totalThis < totalLast
+        ? `mistakes down ${pct}% vs last week 🎉`
+        : `mistakes up ${pct}% vs last week`);
+    }
+    historyApplied.textContent = parts.join(" · ");
   });
 }
 

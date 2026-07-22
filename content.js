@@ -14,6 +14,13 @@
   let sessionStats = { errors: 0, warnings: 0, info: 0, seen: new Set() };
   let dialect = "us";
   let dialectCache = null;     // { map, re } built lazily per dialect
+  let overlaySvg = null;       // SVG underline layer (paired with highlightContainer)
+  let currentRender = null;    // { el, text, findings } of the visible overlay
+  let repositionQueued = false;
+  let siteDisabled = false;
+  let disabledRules = new Set();
+  let ignoredFindings = new Set(); // "type:matched text" the user chose to ignore
+  let lastCheckedText = null;
 
   // ─── Settings ────────────────────────────────────────────────────────────────
   const DEBOUNCE_MS = 800;
@@ -24,38 +31,97 @@
   };
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
-  chrome.storage.sync.get({ enabled: true, dialect: "us" }, (res) => {
-    enabled = res.enabled;
-    dialect = res.dialect;
-    if (enabled) attachListeners();
+  chrome.storage.sync.get(
+    { enabled: true, dialect: "us", disabledSites: [], disabledRules: [] },
+    (res) => {
+      enabled = res.enabled;
+      dialect = res.dialect;
+      siteDisabled = res.disabledSites.includes(location.hostname);
+      disabledRules = new Set(res.disabledRules);
+      if (enabled && !siteDisabled) attachListeners();
+    }
+  );
+  chrome.storage.local.get({ ignoredFindings: [] }, (res) => {
+    ignoredFindings = new Set(res.ignoredFindings);
   });
 
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.enabled) {
-      enabled = changes.enabled.newValue;
-      if (!enabled) {
-        removeAllHighlights();
-        closeTooltip();
-      } else {
-        attachListeners();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync") {
+      if (changes.enabled) {
+        enabled = changes.enabled.newValue;
+        if (!enabled) {
+          removeAllHighlights();
+        } else if (!siteDisabled) {
+          attachListeners();
+        }
+      }
+      if (changes.dialect) {
+        dialect = changes.dialect.newValue;
+        dialectCache = null;
+        recheck();
+      }
+      if (changes.disabledSites) {
+        siteDisabled = changes.disabledSites.newValue.includes(location.hostname);
+        if (siteDisabled) {
+          removeAllHighlights();
+        } else if (enabled) {
+          attachListeners();
+          recheck();
+        }
+      }
+      if (changes.disabledRules) {
+        disabledRules = new Set(changes.disabledRules.newValue);
+        recheck();
       }
     }
-    if (changes.dialect) {
-      dialect = changes.dialect.newValue;
-      dialectCache = null;
-      if (enabled && currentInput) scheduleCheck(currentInput);
+    if (area === "local" && changes.ignoredFindings) {
+      ignoredFindings = new Set(changes.ignoredFindings.newValue);
     }
   });
 
+  function recheck() {
+    lastCheckedText = null;
+    if (enabled && !siteDisabled && currentInput) scheduleCheck(currentInput);
+  }
+
+  let listenersAttached = false;
   function attachListeners() {
+    if (listenersAttached) return;
+    listenersAttached = true;
     document.addEventListener("focusin", onFocusIn, true);
     document.addEventListener("focusout", onFocusOut, true);
     document.addEventListener("click", onDocClick, true);
+    // Capture-phase scroll catches both page scroll and scrolling inside the
+    // field itself (scroll doesn't bubble, but capture still sees it).
+    window.addEventListener("scroll", onViewportChange, { capture: true, passive: true });
+    window.addEventListener("resize", onViewportChange, { passive: true });
+  }
+
+  function onViewportChange(e) {
+    // Ignore scrolls inside our own tooltip
+    if (activeTooltip && e.target instanceof Node && activeTooltip.contains(e.target)) return;
+    if (!currentRender || repositionQueued) return;
+    repositionQueued = true;
+    requestAnimationFrame(() => {
+      repositionQueued = false;
+      if (!currentRender) return;
+      const { el, text, findings: fs } = currentRender;
+      if (!el.isConnected) {
+        removeAllHighlights();
+        return;
+      }
+      // Scrolling inside the field changes which lines are visible → re-render.
+      // Page scroll / resize just moves the field → re-render too (it also
+      // handles reflow-induced wrapping changes). rAF keeps this cheap enough.
+      renderHighlights(el, text, fs);
+    });
   }
 
   // ─── Focus / blur ────────────────────────────────────────────────────────────
   function onFocusIn(e) {
-    const el = e.target;
+    // composedPath()[0] reaches the real target inside shadow roots, where
+    // e.target is retargeted to the shadow host
+    const el = (e.composedPath ? e.composedPath()[0] : e.target);
     if (!isEditable(el)) return;
     currentInput = el;
     el.addEventListener("input", onInput);
@@ -75,7 +141,8 @@
   }
 
   function onDocClick(e) {
-    if (activeTooltip && !activeTooltip.contains(e.target)) {
+    const target = (e.composedPath ? e.composedPath()[0] : e.target);
+    if (activeTooltip && !activeTooltip.contains(target)) {
       closeTooltip();
     }
   }
@@ -86,7 +153,8 @@
     if (el.isContentEditable) return true;
     if (el.tagName === "INPUT") {
       const t = (el.type || "text").toLowerCase();
-      return ["text", "search", "email", "url", "tel", "password", ""].includes(t);
+      // Never touch password fields — reading or underlining them is a privacy hazard
+      return ["text", "search", "email", "url", "tel", ""].includes(t);
     }
     if (el.tagName === "TEXTAREA") return true;
     return false;
@@ -103,63 +171,110 @@
     debounceTimer = setTimeout(() => runCheck(el), DEBOUNCE_MS);
   }
 
+  // Above this size, only the region around the cursor is analyzed
+  const LONG_TEXT_LIMIT = 20000;
+  const LONG_TEXT_WINDOW = 10000;
+
   function runCheck(el) {
-    if (!enabled) return;
+    if (!enabled || siteDisabled) return;
     const text = getText(el);
+
+    // Nothing changed since the last analysis of this element → skip
+    if (el === findingsTarget && text === lastCheckedText && highlightContainer) return;
+
     findingsTarget = el;
+    lastCheckedText = text;
     if (!text.trim()) {
       removeAllHighlights();
       return;
     }
+
+    // For very long texts, analyze a window around the cursor (snapped to
+    // paragraph boundaries) instead of the whole document.
+    let checkText = text;
+    let windowStart = 0;
+    if (text.length > LONG_TEXT_LIMIT) {
+      let cursor = 0;
+      try { cursor = el.selectionStart ?? 0; } catch (_) {}
+      let start = Math.max(0, cursor - LONG_TEXT_WINDOW / 2);
+      let end = Math.min(text.length, cursor + LONG_TEXT_WINDOW / 2);
+      const nlBefore = text.lastIndexOf("\n", start);
+      if (nlBefore !== -1) start = nlBefore + 1;
+      const nlAfter = text.indexOf("\n", end);
+      if (nlAfter !== -1) end = nlAfter;
+      checkText = text.slice(start, end);
+      windowStart = start;
+    }
+
     findings = [];
     for (const rule of RULES) {
+      if (disabledRules.has(rule.id)) continue;
       try {
-        const ruleFindings = rule.check(text);
+        const ruleFindings = rule.check(checkText);
         findings.push(...ruleFindings);
       } catch (_) {}
     }
-    // Deduplicate by position
+    if (windowStart) {
+      for (const f of findings) f.index += windowStart;
+    }
+    // Drop findings the user chose to ignore, then deduplicate by position
     const seen = new Set();
     findings = findings.filter((f) => {
+      const matched = text.slice(f.index, f.index + f.length).toLowerCase();
+      if (ignoredFindings.has(`${f.type}:${matched}`)) return false;
       const key = `${f.index}:${f.type}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    // Update stats
+
+    // Record newly seen findings in the mistake history (once per unique occurrence)
     for (const f of findings) {
-      if (!sessionStats.seen.has(`${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`)) {
-        sessionStats[f.severity] = (sessionStats[f.severity] || 0) + 1;
-        sessionStats.seen.add(`${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`);
+      const histKey = `${f.index}:${f.type}:${text.slice(f.index, f.index + f.length)}`;
+      if (!sessionStats.seen.has(histKey)) {
+        sessionStats.seen.add(histKey);
         recordHistory(f);
       }
     }
-    // Broadcast stats to popup
+
+    // Broadcast the counts currently outstanding in this field
+    const counts = { errors: 0, warnings: 0, info: 0 };
+    for (const f of findings) {
+      if (f.severity === "error") counts.errors++;
+      else if (f.severity === "warning") counts.warnings++;
+      else counts.info++;
+    }
     chrome.runtime.sendMessage({
       type: "stats",
-      stats: {
-        errors: sessionStats.errors,
-        warnings: sessionStats.warnings,
-        info: sessionStats.info,
-        total: findings.length,
-      },
+      stats: { ...counts, total: findings.length },
     }).catch(() => {});
 
     renderHighlights(el, text, findings);
   }
 
   // ─── Highlight rendering ──────────────────────────────────────────────────────
-  function removeAllHighlights() {
+  function removeOverlays() {
     if (highlightContainer) {
       highlightContainer.remove();
       highlightContainer = null;
     }
+    if (overlaySvg) {
+      overlaySvg.remove();
+      overlaySvg = null;
+    }
+    currentRender = null;
+  }
+
+  function removeAllHighlights() {
+    removeOverlays();
     closeTooltip();
   }
 
   function renderHighlights(el, text, allFindings) {
-    removeAllHighlights();
+    // Overlays only — the tooltip survives repositioning re-renders
+    removeOverlays();
     if (!allFindings.length) return;
+    currentRender = { el, text, findings: allFindings };
 
     // Only underline for textarea / input (contenteditable is harder to overlay)
     if (!el.isContentEditable && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
@@ -200,21 +315,19 @@
     Object.assign(mirror.style, mirrorStyle);
     document.body.appendChild(mirror);
 
-    // SVG overlay
+    // SVG overlay — fixed positioning uses pure viewport coordinates
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     Object.assign(svg.style, {
       position: "fixed",
-      top: rect.top + window.scrollY + "px",
-      left: rect.left + window.scrollX + "px",
+      top: rect.top + "px",
+      left: rect.left + "px",
       width: rect.width + "px",
       height: rect.height + "px",
       pointerEvents: "none",
       zIndex: "2147483640",
       overflow: "hidden",
     });
-    svg.style.top = rect.top + "px";
-    svg.style.left = rect.left + "px";
-    svg.style.position = "fixed";
+    overlaySvg = svg;
 
     // We use clickable spans on top of the SVG for interactivity
     highlightContainer = document.createElement("div");
@@ -371,6 +484,7 @@
           <span class="gramr-apply-text">Apply correction</span>
           <span class="gramr-apply-preview">${escHtml(corrPreview)}</span>
         </button>` : ""}
+        <button class="gramr-ignore-btn" data-ignore="1" title="Stop flagging this exact word or phrase">Ignore — I meant this</button>
         <details class="gramr-tip-details" open>
           <summary>Why does this matter?</summary>
           <p>${escHtml(finding.explanation)}</p>
@@ -396,6 +510,11 @@
         applyCorrection(finding, tip);
       });
     }
+
+    tip.querySelector("[data-ignore]").addEventListener("click", (e) => {
+      e.stopPropagation();
+      ignoreFinding(finding);
+    });
 
     document.body.appendChild(tip);
     activeTooltip = tip;
@@ -428,6 +547,18 @@
     }
   }
 
+  // ─── Ignore a finding ─────────────────────────────────────────────────────────
+  function ignoreFinding(finding) {
+    const el = findingsTarget;
+    if (!el) { closeTooltip(); return; }
+    const matched = getText(el).slice(finding.index, finding.index + finding.length).toLowerCase();
+    ignoredFindings.add(`${finding.type}:${matched}`);
+    chrome.storage.local.set({ ignoredFindings: [...ignoredFindings] });
+    closeTooltip();
+    lastCheckedText = null;
+    runCheck(el);
+  }
+
   // ─── Apply correction ─────────────────────────────────────────────────────────
   function applyCorrection(finding, tipEl) {
     const el = findingsTarget;
@@ -447,6 +578,11 @@
       }
     }
 
+    // The remaining findings' indexes are stale the moment the text changes,
+    // so drop them and re-check immediately rather than waiting for the debounce.
+    findings = [];
+    removeOverlays();
+
     setTimeout(() => {
       if (el.isContentEditable) {
         replaceInContentEditable(el, finding.index, finding.length, finding.correction);
@@ -458,6 +594,8 @@
         el.focus();
       }
       closeTooltip();
+      clearTimeout(debounceTimer);
+      runCheck(el);
     }, 350);
 
     chrome.storage.local.get({ correctionsApplied: 0 }, ({ correctionsApplied }) => {
@@ -480,6 +618,7 @@
     const buf = historyBuffer;
     historyBuffer = {};
     if (!Object.keys(buf).length) return;
+    const week = String(Math.floor(Date.now() / 604800000)); // epoch week number
     chrome.storage.local.get({ history: {} }, ({ history }) => {
       for (const [type, v] of Object.entries(buf)) {
         const h = history[type] || { count: 0 };
@@ -487,6 +626,12 @@
         h.label = v.label;
         h.severity = v.severity;
         h.last = Date.now();
+        h.weeks = h.weeks || {};
+        h.weeks[week] = (h.weeks[week] || 0) + v.count;
+        // Keep only the last 8 weeks of buckets
+        for (const k of Object.keys(h.weeks)) {
+          if (Number(week) - Number(k) > 8) delete h.weeks[k];
+        }
         history[type] = h;
       }
       chrome.storage.local.set({ history });
@@ -1021,8 +1166,16 @@
           "at the end of the day": "ultimately",
           "when all is said and done": "ultimately",
         };
-        for (const [phrase, suggestion] of Object.entries(wordyPhrases)) {
-          const re = new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`, "gi");
+        // Compile the ~80 phrase regexes once, not on every keystroke
+        if (!this.compiled) {
+          this.compiled = Object.entries(wordyPhrases).map(([phrase, suggestion]) => ({
+            phrase,
+            suggestion,
+            re: new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`, "gi"),
+          }));
+        }
+        for (const { phrase, suggestion, re } of this.compiled) {
+          re.lastIndex = 0;
           let m;
           while ((m = re.exec(text)) !== null) {
             const sug = suggestion ? `"${suggestion}"` : "remove it";
@@ -1238,7 +1391,8 @@
           "apple","area","artist","uncle","upset","account","address","update",
           "upgrade","upload","annual","honest","hour","hourly",
         ];
-        const reA = new RegExp(`\\ba\\s+(${vowelWords.join("|")})\\b`, "gi");
+        const reA = this.reA || (this.reA = new RegExp(`\\ba\\s+(${vowelWords.join("|")})\\b`, "gi"));
+        reA.lastIndex = 0;
         let m;
         while ((m = reA.exec(text)) !== null) {
           findings.push({
@@ -1277,7 +1431,8 @@
           "room","door","street","city","town","building","phone","laptop",
           "computer","tablet","keyboard","mouse","screen","desk",
         ];
-        const reAn = new RegExp(`\\ban\\s+(${consonantWords.join("|")})\\b`, "gi");
+        const reAn = this.reAn || (this.reAn = new RegExp(`\\ban\\s+(${consonantWords.join("|")})\\b`, "gi"));
+        reAn.lastIndex = 0;
         while ((m = reAn.exec(text)) !== null) {
           findings.push({
             index: m.index,
@@ -1295,7 +1450,8 @@
         }
         // "an" before words that sound like consonants (u as "yoo")
         const consonantSoundVowelWords = ["university","unicorn","unit","union","unique","user","usual","utility","uniform","European","euphemism","ukulele","usage","uterus"];
-        const reAnYoo = new RegExp(`\\ban\\s+(${consonantSoundVowelWords.join("|")})\\b`, "gi");
+        const reAnYoo = this.reAnYoo || (this.reAnYoo = new RegExp(`\\ban\\s+(${consonantSoundVowelWords.join("|")})\\b`, "gi"));
+        reAnYoo.lastIndex = 0;
         while ((m = reAnYoo.exec(text)) !== null) {
           findings.push({
             index: m.index,
@@ -1322,7 +1478,8 @@
           "Iraqi","Irish","Israeli","Icelandic","English","Englishman","Egyptian",
           "Ethiopian","Estonian","Eagle",
         ];
-        const reAcronymA = new RegExp(`\\b([Aa])\\s+(${vowelSoundNames.join("|")})\\b`, "g");
+        const reAcronymA = this.reAcronymA || (this.reAcronymA = new RegExp(`\\b([Aa])\\s+(${vowelSoundNames.join("|")})\\b`, "g"));
+        reAcronymA.lastIndex = 0;
         while ((m = reAcronymA.exec(text)) !== null) {
           findings.push({
             index: m.index,
@@ -1345,7 +1502,8 @@
           "BBC","PC","DJ","Ukrainian","Utah","Euro","Eurozone","Yale","Jeep",
           "one-time","one-way","one-off",
         ];
-        const reAcronymAn = new RegExp(`\\b([Aa])n\\s+(${consonantSoundNames.join("|")})\\b`, "g");
+        const reAcronymAn = this.reAcronymAn || (this.reAcronymAn = new RegExp(`\\b([Aa])n\\s+(${consonantSoundNames.join("|")})\\b`, "g"));
+        reAcronymAn.lastIndex = 0;
         while ((m = reAcronymAn.exec(text)) !== null) {
           findings.push({
             index: m.index,
@@ -2099,7 +2257,8 @@
           "flights","tickets","passengers","customers","users","members",
           "accounts","reports","documents","forms","applications","requests",
         ];
-        const re = new RegExp(`\\bless\\s+(${countableNouns.join("|")})\\b`, "gi");
+        const re = this.re || (this.re = new RegExp(`\\bless\\s+(${countableNouns.join("|")})\\b`, "gi"));
+        re.lastIndex = 0;
         let m;
         while ((m = re.exec(text)) !== null) {
           findings.push({
@@ -2170,10 +2329,11 @@
           buys: "bought", meets: "met", decides: "decided", arrives: "arrived",
         };
         const pastAdverbial = "(?:yesterday|last\\s+(?:night|week|month|year|summer|winter))(?!['’]s)";
-        const rePast = new RegExp(
+        const rePast = this.rePast || (this.rePast = new RegExp(
           `\\b(?<!since\\s)(${pastAdverbial})\\b([^.!?\\n]{0,60}?)\\b(${Object.keys(presentToPast).join("|")})\\b`,
           "gi"
-        );
+        ));
+        rePast.lastIndex = 0;
         let m;
         while ((m = rePast.exec(text)) !== null) {
           const verb = m[3].toLowerCase();
@@ -2199,10 +2359,11 @@
           arrived: "will arrive", started: "will start", left: "will leave",
         };
         const futureAdverbial = "(?:tomorrow|next\\s+(?:week|month|year|summer|winter))(?!['’]s)";
-        const reFuture = new RegExp(
+        const reFuture = this.reFuture || (this.reFuture = new RegExp(
           `\\b(${futureAdverbial})\\b([^.!?\\n]{0,60}?)\\b(${Object.keys(pastToFuture).join("|")})\\b`,
           "gi"
-        );
+        ));
+        reFuture.lastIndex = 0;
         while ((m = reFuture.exec(text)) !== null) {
           const verb = m[3].toLowerCase();
           findings.push({

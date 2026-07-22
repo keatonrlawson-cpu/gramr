@@ -57,6 +57,17 @@
       </select>
     </section>
 
+    <!-- Per-site disable -->
+    <section class="setting-row" id="siteRow" hidden>
+      <label class="setting-label" for="siteToggle">Disable on <span id="siteHost"></span></label>
+      <label class="toggle toggle--small" title="Disable Gramr on this site">
+        <input type="checkbox" id="siteToggle" />
+        <span class="toggle-track">
+          <span class="toggle-thumb"></span>
+        </span>
+      </label>
+    </section>
+
     <!-- Mistake history -->
     <section class="history-section" id="historySection" hidden>
       <div class="section-head">
@@ -69,7 +80,7 @@
 
     <!-- Rule list -->
     <section class="rules-section">
-      <h2 class="section-title">What Gramr checks</h2>
+      <h2 class="section-title">What Gramr checks <span class="section-hint">(click to toggle)</span></h2>
       <ul class="rule-list" id="ruleList"></ul>
     </section>
 
