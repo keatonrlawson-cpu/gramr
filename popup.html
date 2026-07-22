@@ -59,6 +59,12 @@
       <span id="statusText">Click a text field and start typing to get feedback.</span>
     </div>
 
+    <!-- Canvas-editor notice (Google Docs etc.) -->
+    <section class="docs-notice" id="docsNotice" hidden>
+      <p class="docs-notice-text">📄 This editor draws to a canvas, so Gramr can't check it inline.</p>
+      <button class="docs-notice-btn" id="openCheckerBtn">Open the paste-to-check tool →</button>
+    </section>
+
     <!-- Focus of the week -->
     <section class="focus-card" id="focusCard" hidden>
       <div class="focus-head">🎯 This week's focus</div>
@@ -126,6 +132,7 @@
         <label class="opt-row"><input type="checkbox" id="optHistory" checked /> Mistake history</label>
         <label class="opt-row"><input type="checkbox" id="optAdaptive" checked /> Adaptive tooltips (shorter as you improve)</label>
         <label class="opt-row"><input type="checkbox" id="optProveIt" /> Prove-it mode (answer a quick check before Apply)</label>
+        <button class="opt-link" id="openCheckerLink">🔍 Open the paste-to-check tool</button>
       </details>
     </section>
 

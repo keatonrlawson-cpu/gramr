@@ -236,6 +236,9 @@ const siteHost = document.getElementById("siteHost");
 const siteToggle = document.getElementById("siteToggle");
 let currentHost = null;
 
+// Canvas-based editors no extension can read through the DOM
+const CANVAS_EDITOR_HOSTS = ["docs.google.com"];
+
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   try {
     const url = new URL(tabs[0]?.url || "");
@@ -246,8 +249,17 @@ chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     chrome.storage.sync.get({ disabledSites: [] }, ({ disabledSites }) => {
       siteToggle.checked = disabledSites.includes(currentHost);
     });
+    if (CANVAS_EDITOR_HOSTS.includes(currentHost)) {
+      document.getElementById("docsNotice").hidden = false;
+    }
   } catch (_) {}
 });
+
+function openChecker() {
+  chrome.tabs.create({ url: chrome.runtime.getURL("checker.html") });
+}
+document.getElementById("openCheckerBtn").addEventListener("click", openChecker);
+document.getElementById("openCheckerLink").addEventListener("click", openChecker);
 
 siteToggle.addEventListener("change", () => {
   if (!currentHost) return;

@@ -28,6 +28,10 @@ your progress is stored locally in your browser.
 - **Regional spelling** — pick American, British, Australian, or Canadian
   English; Gramr flags off-dialect spellings (colour/color, organise/organize)
 
+Google Docs and other canvas-rendered editors can't be checked inline by any
+DOM-based extension — for those, the popup offers a **paste-to-check tool**:
+paste your text, click through the fixes, and copy the corrected text back.
+
 Underlines are pattern-coded for accessibility: errors are **wavy**, warnings
 **dashed**, tips **dotted**.
 
@@ -60,6 +64,7 @@ turn off any of it, down to a plain grammar checker.
 | `background.js` | Service worker: stats relay, welcome page on install |
 | `dict/words.txt` | 50k-word frequency-ordered dictionary |
 | `welcome.html` | Onboarding page with a live playground |
+| `checker.html/js` | Paste-to-check tool for Google Docs, PDFs, and other unreachable editors |
 | `test.html` | Developer test page |
 
 ## Privacy

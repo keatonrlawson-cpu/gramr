@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gramr Checker — paste to check</title>
+  <link rel="stylesheet" href="content.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      line-height: 1.6;
+      padding: 32px 20px 60px;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    .head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+    .logo-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: linear-gradient(135deg, #cba6f7 0%, #89b4fa 100%);
+      color: #1e1e2e; font-size: 20px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    h1 { font-size: 20px; }
+    .tagline { color: #a6adc8; font-size: 13.5px; margin-bottom: 20px; }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #313244;
+      color: #cdd6f4;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover { border-color: #cba6f7; }
+    .btn--primary {
+      background: rgba(166,227,161,0.12);
+      border-color: rgba(166,227,161,0.3);
+      color: #a6e3a1;
+    }
+    .btn--primary:hover { border-color: #a6e3a1; }
+    .toolbar-status {
+      margin-left: auto;
+      font-size: 12.5px;
+      color: #6c7086;
+    }
+    textarea {
+      width: 100%;
+      min-height: 380px;
+      resize: vertical;
+      background: #11111b;
+      color: #cdd6f4;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 18px;
+      font-size: 15.5px;
+      line-height: 1.8;
+      font-family: inherit;
+      outline: none;
+    }
+    textarea:focus { border-color: #cba6f7; }
+    .hint {
+      font-size: 12.5px;
+      color: #6c7086;
+      margin-top: 10px;
+    }
+    .hint kbd {
+      background: #313244;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 11.5px;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="logo-icon">G</div>
+      <h1>Gramr Checker</h1>
+    </div>
+    <p class="tagline">
+      Paste anything here — text from Google Docs, PDFs, emails, wherever Gramr
+      can't check inline — fix it, and copy it back. Nothing leaves your device.
+    </p>
+    <div class="toolbar">
+      <button class="btn btn--primary" id="copyBtn">📋 Copy corrected text</button>
+      <button class="btn" id="clearBtn">Clear</button>
+      <span class="toolbar-status" id="copyStatus"></span>
+    </div>
+    <textarea id="checkta" spellcheck="false" placeholder="Paste your text here (Ctrl+V) — underlines appear a moment after you stop typing. Click them to learn and apply fixes."></textarea>
+    <p class="hint">
+      Tip: in Google Docs, select all with <kbd>Ctrl+A</kbd>, copy, paste here,
+      apply your fixes, then <strong>Copy corrected text</strong> and paste it back.
+    </p>
+  </div>
+  <script src="content.js"></script>
+  <script src="checker.js"></script>
+</body>
+</html>

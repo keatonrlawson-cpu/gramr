@@ -143,6 +143,15 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && activeTooltip) closeTooltip();
     }, true);
+    // If a field was already focused before our listeners attached (autofocus
+    // pages, or the extension enabling mid-session), adopt it now — focusin
+    // will never fire for it.
+    const active = document.activeElement;
+    if (active && isEditable(active) && active !== currentInput) {
+      currentInput = active;
+      active.addEventListener("input", onInput);
+      scheduleCheck(active);
+    }
   }
 
   function onViewportChange(e) {

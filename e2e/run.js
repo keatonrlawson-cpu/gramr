@@ -98,6 +98,23 @@ const ok = (name, cond, extra="") => { results.push([cond, name, extra]); consol
   ok("welcome playground underlines", !!wcont && wpaths >= 5, wpaths + " paths");
   ok("no welcome page errors", werrs.length === 0, werrs.slice(0, 3).join(" | "));
 
+  // ── paste-to-check page ──
+  const chk = await ctx.newPage();
+  const cerrs = [];
+  chk.on("pageerror", (e) => cerrs.push(e.message));
+  chk.on("console", (m) => { if (m.type() === "error" && !m.text().includes("favicon")) cerrs.push(m.text()); });
+  await chk.goto(`chrome-extension://${extId}/checker.html`);
+  await chk.click("#checkta");
+  await chk.fill("#checkta", "Whose name is yours. I definately could of gone.");
+  await chk.waitForSelector("[data-gramr-container]", { timeout: 5000 }).catch(() => {});
+  const cpaths = await chk.$$eval("svg path", (ps) => ps.length).catch(() => 0);
+  ok("checker page underlines", cpaths >= 3, cpaths + " paths");
+  await chk.click("#copyBtn");
+  await chk.waitForTimeout(300);
+  const copyMsg = await chk.$eval("#copyStatus", (el) => el.textContent).catch(() => "");
+  ok("copy button works", copyMsg.includes("Copied"), copyMsg);
+  ok("no checker page errors", cerrs.length === 0, cerrs.slice(0, 3).join(" | "));
+
   await ctx.close();
   const fails = results.filter((r) => !r[0]).length;
   console.log(`\n${results.length - fails}/${results.length} passed`);
