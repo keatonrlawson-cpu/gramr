@@ -32,7 +32,7 @@
   const SLIP_RULES = new Set(["misspelling", "repeated-word"]);
   const HABIT_RULES = new Set([
     "wordy", "passive-voice", "oxford-comma", "try-and",
-    "dialect-spelling", "redundant-acronym",
+    "dialect-spelling", "redundant-acronym", "redundant-pair",
   ]);
   function ruleKind(type) {
     if (SLIP_RULES.has(type)) return "slip";
@@ -2943,6 +2943,282 @@
               `"Try and do it" literally describes two actions (trying, and doing). "Try to do it" expresses the intended meaning — attempting the action. "Try and" is fine in speech but "try to" is preferred in writing.`,
             example: `❌  I will try and finish today.\n✅  I will try to finish today.`,
             fix: `Change "try and" to "try to."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── Question ending in a period ──────────────────────────────────────────
+    {
+      id: "missing-question-mark",
+      check(text) {
+        const findings = [];
+        const AUX = "(?:is|are|was|were|am|do|does|did|can|could|will|would|should|shall|have|has|had)";
+        // Direct: "How are you." / "What is your name." — aux right after the
+        // question word, so declaratives like "What matters is effort." don't fire.
+        // Determiner: "Whose name is yours." / "Which one do you want."
+        const res = this.res || (this.res = [
+          new RegExp(`(^|[.!?]\\s+|\\n\\s*)(Who|What|Where|When|Why|How|Whose|Which)\\s+${AUX}\\b(?!\\s+more,|\\s+worse,)[^.!?\\n]*?(\\.)`, "g"),
+          new RegExp(`(^|[.!?]\\s+|\\n\\s*)(Whose|Which)\\s+\\w+\\s+${AUX}\\b[^.!?\\n]*?(\\.)`, "g"),
+        ]);
+        const seen = new Set();
+        for (const re of res) {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(text)) !== null) {
+            const periodIndex = m.index + m[0].length - 1;
+            if (seen.has(periodIndex)) continue;
+            seen.add(periodIndex);
+            const sentence = m[0].slice(m[1].length);
+            findings.push({
+              index: periodIndex,
+              length: 1,
+              correction: "?",
+              type: "missing-question-mark",
+              severity: "warning",
+              label: "Question mark",
+              message: `This looks like a question — end it with "?" instead of a period.`,
+              explanation:
+                `Sentences that start with a question word (who, what, where, how…) followed by a verb are direct questions, and direct questions end with a question mark. A period makes the sentence read as a flat statement.`,
+              example: `❌  ${sentence}\n✅  ${sentence.slice(0, -1)}?`,
+              fix: `Change the period to a question mark.`,
+            });
+          }
+        }
+        return findings;
+      },
+    },
+
+    // ── Unnatural question phrasing ──────────────────────────────────────────
+    {
+      id: "question-phrasing",
+      check(text) {
+        const findings = [];
+        // "Whose name is yours?" asks who owns something while answering it —
+        // the natural question is "What is your name?"
+        const possMap = { yours: "your", mine: "my", his: "his", hers: "her", theirs: "their", ours: "our" };
+        const reWhose = /\b([Ww])hose\s+(\w+)\s+(is|are)\s+(yours|mine|his|hers|theirs|ours)\b/g;
+        let m;
+        while ((m = reWhose.exec(text)) !== null) {
+          const poss = possMap[m[4].toLowerCase()];
+          const fixTo = `${m[1] === "W" ? "What" : "what"} ${m[3]} ${poss} ${m[2]}`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "question-phrasing",
+            severity: "warning",
+            label: "Question phrasing",
+            message: `"${m[0]}" is a tangled question — the natural form is "${fixTo}."`,
+            explanation:
+              `"Whose" asks who something belongs to, but "${m[4]}" already answers that — so the sentence asks and answers at once. When you want to know the thing itself, ask with "what": "${fixTo}?"`,
+            example: `❌  ${m[0]}?\n✅  ${fixTo}?`,
+            fix: `Rephrase as "${fixTo}?"`,
+          });
+        }
+        // "How do you call this?" → "What do you call this?"
+        const reHowCall = /\b([Hh])ow\s+do\s+(you|we|they)\s+call\b/g;
+        while ((m = reHowCall.exec(text)) !== null) {
+          const fixTo = `${m[1] === "H" ? "What" : "what"} do ${m[2]} call`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "question-phrasing",
+            severity: "warning",
+            label: "Question phrasing",
+            message: `English asks "what do ${m[2]} call…," not "how do ${m[2]} call…"`,
+            explanation:
+              `"How" asks about manner (in what way); names are things, so English uses "what." Many languages phrase this with "how," which makes this one of the most common phrasing slips for multilingual writers.`,
+            example: `❌  How do ${m[2]} call this?\n✅  What do ${m[2]} call this?`,
+            fix: `Change "how" to "what."`,
+          });
+        }
+        return findings;
+      },
+    },
+
+    // ── Eggcorns (misheard idioms) ───────────────────────────────────────────
+    {
+      id: "eggcorn",
+      check(text) {
+        const findings = [];
+        const eggcorns = {
+          "for all intensive purposes": "for all intents and purposes",
+          "one in the same": "one and the same",
+          "nip it in the butt": "nip it in the bud",
+          "case and point": "case in point",
+          "peaked my interest": "piqued my interest",
+          "peaked your interest": "piqued your interest",
+          "deep seeded": "deep-seated",
+          "escape goat": "scapegoat",
+          "mute point": "moot point",
+          "doggy dog world": "dog-eat-dog world",
+          "supposably": "supposedly",
+          "irregardless": "regardless",
+          "on tenderhooks": "on tenterhooks",
+          "baited breath": "bated breath",
+          "wet your appetite": "whet your appetite",
+          "free reign": "free rein",
+          "sneak peak": "sneak peek",
+          "piece of mind": "peace of mind",
+          "tow the line": "toe the line",
+          "beckon call": "beck and call",
+          "pass mustard": "pass muster",
+          "expresso": "espresso",
+          "statue of limitations": "statute of limitations",
+          "self-depreciating": "self-deprecating",
+          "worse comes to worse": "worst comes to worst",
+          "extract revenge": "exact revenge",
+          "hunger pains": "hunger pangs",
+          "in one foul swoop": "in one fell swoop",
+          "per say": "per se",
+          "day in age": "day and age",
+          "chock it up": "chalk it up",
+        };
+        if (!this.compiled) {
+          this.compiled = Object.entries(eggcorns).map(([wrong, right]) => ({
+            wrong,
+            right,
+            re: new RegExp(`\\b${wrong.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`, "gi"),
+          }));
+        }
+        for (const { wrong, right, re } of this.compiled) {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(text)) !== null) {
+            const corrected = m[0][0] === m[0][0].toUpperCase() && m[0][0] !== m[0][0].toLowerCase()
+              ? right[0].toUpperCase() + right.slice(1) : right;
+            findings.push({
+              index: m.index,
+              length: m[0].length,
+              correction: corrected,
+              type: "eggcorn",
+              severity: "error",
+              label: "Misheard idiom",
+              message: `The idiom is "${right}," not "${wrong}."`,
+              explanation:
+                `This is an "eggcorn" — a phrase misheard as similar-sounding words that seem to make sense. The established idiom is "${right}"; the misheard version stands out to readers who know it.`,
+              example: `❌  ${wrong}\n✅  ${right}`,
+              fix: `Replace with "${right}."`,
+            });
+          }
+        }
+        return findings;
+      },
+    },
+
+    // ── Redundant pairs ──────────────────────────────────────────────────────
+    {
+      id: "redundant-pair",
+      check(text) {
+        const findings = [];
+        const pairs = {
+          "return back": "return", "returned back": "returned", "returning back": "returning",
+          "revert back": "revert", "reverted back": "reverted",
+          "repeat again": "repeat", "repeated again": "repeated",
+          "discuss about": "discuss", "discussed about": "discussed", "discussing about": "discussing",
+          "in regards to": "regarding",
+          "join together": "join", "joined together": "joined",
+          "combine together": "combine", "combined together": "combined",
+          "merge together": "merge", "merged together": "merged",
+          "advance planning": "planning",
+          "raise up": "raise", "lower down": "lower",
+        };
+        if (!this.compiled) {
+          this.compiled = Object.entries(pairs).map(([wrong, right]) => ({
+            wrong,
+            right,
+            re: new RegExp(`\\b${wrong.replace(/\s+/g, "\\s+")}\\b`, "gi"),
+          }));
+        }
+        for (const { wrong, right, re } of this.compiled) {
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(text)) !== null) {
+            const corrected = m[0][0] === m[0][0].toUpperCase() && m[0][0] !== m[0][0].toLowerCase()
+              ? right[0].toUpperCase() + right.slice(1) : right;
+            findings.push({
+              index: m.index,
+              length: m[0].length,
+              correction: corrected,
+              type: "redundant-pair",
+              severity: "info",
+              label: "Redundant pair",
+              message: `"${m[0]}" says it twice — "${right}" already contains the idea.`,
+              explanation:
+                `The second word repeats meaning already in the first: you can only return by going back, and discussing is always "about" something. Dropping the extra word tightens the sentence without losing anything.`,
+              example: `❌  ${wrong}\n✅  ${right}`,
+              fix: `Use just "${right}."`,
+            });
+          }
+        }
+        return findings;
+      },
+    },
+
+    // ── Unidiomatic constructions ────────────────────────────────────────────
+    {
+      id: "unidiomatic",
+      check(text) {
+        const findings = [];
+        // "I am agree" → "I agree" (agree is a verb, not an adjective)
+        const agreeMap = { am: "agree", are: "agree", is: "agrees", was: "agreed", were: "agreed" };
+        const reAgree = /\b(am|are|is|was|were)\s+agree\b/gi;
+        let m;
+        while ((m = reAgree.exec(text)) !== null) {
+          const fixTo = agreeMap[m[1].toLowerCase()];
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `"${m[0]}" — "agree" is a verb, so no "${m[1]}" is needed: "${fixTo}."`,
+            explanation:
+              `In English, "agree" works like "run" or "know" — it IS the verb, so it can't follow am/is/are the way an adjective would. Say "I agree," not "I am agree." (The adjective form is "agreeable," which means something different.)`,
+            example: `❌  I ${m[1].toLowerCase()} agree with you.\n✅  I agree with you.`,
+            fix: `Drop "${m[1]}" — say "${fixTo}."`,
+          });
+        }
+        // "make a photo" → "take a photo"
+        const reMake = /\b([Mm])ake\s+(a|an|some)\s+(photo|photos|picture|pictures)\b/g;
+        while ((m = reMake.exec(text)) !== null) {
+          const fixTo = `${m[1] === "M" ? "Take" : "take"} ${m[2]} ${m[3]}`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `English "takes" photos rather than "making" them.`,
+            explanation:
+              `Verb–noun pairings (collocations) are conventions: English takes photos, makes decisions, and does homework. Many languages "make" a photo, so this is a very common carry-over.`,
+            example: `❌  make ${m[2]} ${m[3]}\n✅  take ${m[2]} ${m[3]}`,
+            fix: `Change "make" to "take."`,
+          });
+        }
+        // "open the light" → "turn on the light"
+        const reLight = /\b([Oo]pen|[Cc]lose)\s+the\s+(light|lights|TV|tv|radio)\b/g;
+        while ((m = reLight.exec(text)) !== null) {
+          const isOpen = m[1].toLowerCase() === "open";
+          const verb = isOpen ? "turn on" : "turn off";
+          const fixTo = `${m[1][0] === m[1][0].toUpperCase() ? verb[0].toUpperCase() + verb.slice(1) : verb} the ${m[2]}`;
+          findings.push({
+            index: m.index,
+            length: m[0].length,
+            correction: fixTo,
+            type: "unidiomatic",
+            severity: "warning",
+            label: "Unidiomatic phrasing",
+            message: `English "${verb}s" the ${m[2]} — "open/close" is for doors and containers.`,
+            explanation:
+              `Devices and lights are turned on and off in English; open/close describes physical objects like doors, windows, and boxes. Many languages use open/close for both, so this is a common carry-over.`,
+            example: `❌  ${m[1].toLowerCase()} the ${m[2]}\n✅  ${verb} the ${m[2]}`,
+            fix: `Use "${verb}" instead of "${m[1].toLowerCase()}."`,
           });
         }
         return findings;

@@ -6,6 +6,7 @@ const RULES_META = [
   { id: "past-participle",        label: "Past participles (have went → gone)", severity: "error" },
   { id: "double-comparative",     label: "Double comparatives (more better)", severity: "error" },
   { id: "whose-whos",             label: "whose vs who's",              severity: "error" },
+  { id: "eggcorn",                label: "Misheard idioms (for all intensive purposes)", severity: "error" },
   { id: "its-its",                label: "its vs it's",                 severity: "error" },
   { id: "there-their-theyre",     label: "their / there / they're",     severity: "error" },
   { id: "your-youre",             label: "your vs you're",              severity: "error" },
@@ -37,19 +38,23 @@ const RULES_META = [
   { id: "could-care-less",        label: "could care less",             severity: "warning" },
   { id: "amount-number",          label: "amount vs number",            severity: "warning" },
   { id: "between-and",            label: "between … and",               severity: "warning" },
+  { id: "missing-question-mark",  label: "Questions ending in periods", severity: "warning" },
+  { id: "question-phrasing",      label: "Question phrasing (whose name is yours)", severity: "warning" },
+  { id: "unidiomatic",            label: "Unidiomatic phrasing (am agree, open the light)", severity: "warning" },
   // Info
   { id: "oxford-comma",           label: "Oxford comma",                severity: "info" },
   { id: "wordy",                  label: "Wordy phrases (50+)",         severity: "info" },
   { id: "redundant-acronym",      label: "Redundant acronyms (ATM machine etc.)", severity: "info" },
   { id: "dialect-spelling",       label: "Regional spelling (US/UK/AU/CA)", severity: "info" },
   { id: "try-and",                label: '"try and" vs "try to"',       severity: "info" },
+  { id: "redundant-pair",         label: "Redundant pairs (return back, discuss about)", severity: "info" },
 ];
 
 // ── Learning model (mirrors content.js) ─────────────────────────────────────
 const SLIP_RULES = new Set(["misspelling", "repeated-word"]);
 const HABIT_RULES = new Set([
   "wordy", "passive-voice", "oxford-comma", "try-and",
-  "dialect-spelling", "redundant-acronym",
+  "dialect-spelling", "redundant-acronym", "redundant-pair",
 ]);
 function ruleKind(type) {
   if (SLIP_RULES.has(type)) return "slip";
@@ -138,6 +143,10 @@ const LESSONS = {
   "amount-number":      { lesson: "Countable things take “number” (a number of people); uncountable take “amount” (an amount of water).", trick: "Same test as fewer/less: countable → number." },
   "between-and":        { lesson: "“Between” always pairs with “and”: between 5 and 10.", trick: "“To” belongs to “from”: from 5 to 10." },
   "me-subject":         { lesson: "The doer of the action is “I,” not “me” — and the other person goes first: “Sarah and I went.”", trick: "Drop the other person: “Me went” fails, “I went” works." },
+  "missing-question-mark": { lesson: "Direct questions — sentences starting with who/what/where/how + a verb — end with a question mark, not a period.", trick: "If you could answer the sentence out loud, it needs a “?”." },
+  "question-phrasing":  { lesson: "Ask for a thing with “what”: “What is your name?” — “whose” asks who owns something, and “how” asks in what way.", trick: "Want the thing itself? → what. Want the owner? → whose. Want the method? → how." },
+  "eggcorn":            { lesson: "Idioms are fixed phrases; misheard versions (“for all intensive purposes”) look wrong to readers who know the original (“for all intents and purposes”).", trick: "If an idiom's words seem oddly literal, look up the original phrase." },
+  "unidiomatic":        { lesson: "English pairs certain verbs with certain nouns: you take photos, turn on lights, and “agree” without “am” — even when your other language does it differently.", trick: "Collocations are habits, not logic — learn the pair, not the rule." },
 };
 
 // ── Practice questions (spaced repetition, one per rule) ────────────────────
@@ -174,6 +183,10 @@ const QUIZ = {
   "amount-number":      { q: "A large ___ of people came.", choices: ["number", "amount"] },
   "between-and":        { q: "Pick a number between 1 ___ 10.", choices: ["and", "to"] },
   "me-subject":         { q: "___ went to the park.", choices: ["Sarah and I", "Me and Sarah"] },
+  "missing-question-mark": { q: "Which is correct?", choices: ["What is your name?", "What is your name."] },
+  "question-phrasing":  { q: "You want to know someone's name. You ask:", choices: ["What is your name?", "Whose name is yours?"] },
+  "eggcorn":            { q: "The idiom is “for all ___ purposes.”", choices: ["intents and", "intensive"] },
+  "unidiomatic":        { q: "Which is natural English?", choices: ["I agree with you.", "I am agree with you."] },
 };
 
 // Leitner boxes: review after 1 / 3 / 7 / 21 days
