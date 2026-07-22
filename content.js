@@ -33,6 +33,7 @@
   const HABIT_RULES = new Set([
     "wordy", "passive-voice", "oxford-comma", "try-and",
     "dialect-spelling", "redundant-acronym", "redundant-pair",
+    "informal-abbreviation",
   ]);
   function ruleKind(type) {
     if (SLIP_RULES.has(type)) return "slip";
@@ -1411,6 +1412,59 @@
   let DICT = null;        // Map word → frequency rank (lower = more common)
   let dictLoading = false;
 
+  // Common abbreviations, tech vocabulary, and file-format names the base
+  // dictionary lacks — merged in as valid words (with low suggestion priority)
+  const EXTRA_WORDS = [
+    // abbreviations
+    "approx", "vs", "misc", "etc", "aka", "asap", "fyi", "faq", "faqs", "diy",
+    "eta", "rsvp", "mph", "kph", "kg", "km", "cm", "mm", "ml", "oz", "lbs",
+    "hrs", "mins", "secs", "min", "max", "avg", "qty", "dept", "depts", "est",
+    "intro", "memo", "memos", "rep", "reps", "temp", "temps", "stats", "specs",
+    // texting shorthand — valid tokens here so the spellchecker stays quiet
+    // and the informal-abbreviation rule does the coaching instead
+    "thx", "pls", "plz", "ppl", "msg", "msgs", "pic", "pics", "tho", "thru",
+    "cuz", "coz", "wanna", "gotta", "kinda", "sorta", "dunno", "idk", "imo",
+    "imho", "btw", "tbh", "nvm", "omw",
+    // file formats & extensions
+    "json", "html", "css", "js", "jsx", "ts", "tsx", "xml", "csv", "tsv",
+    "pdf", "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "mp3", "mp4",
+    "mov", "avi", "wav", "flac", "zip", "gz", "rar", "exe", "dmg", "iso",
+    "apk", "sql", "php", "py", "rb", "md", "txt", "yml", "yaml", "toml",
+    "ini", "cfg", "env", "bak", "tmp", "docx", "xlsx", "pptx", "ttf", "otf",
+    "woff", "webm", "heic",
+    // tech vocabulary
+    "config", "configs", "repo", "repos", "dev", "devs", "prod", "app",
+    "apps", "api", "apis", "url", "urls", "http", "https", "www", "admin",
+    "admins", "auth", "login", "logins", "logout", "signup", "username",
+    "usernames", "backend", "frontend", "fullstack", "localhost", "db",
+    "ui", "ux", "id", "ids", "os", "ip", "ips", "cpu", "gpu", "ram", "ssd",
+    "hdd", "usb", "wifi", "hotspot", "email", "emails", "inbox", "unread",
+    "screenshot", "screenshots", "favicon", "webpage", "webpages", "website",
+    "websites", "webserver", "online", "offline", "plugin", "plugins",
+    "addon", "addons", "dropdown", "dropdowns", "checkbox", "checkboxes",
+    "tooltip", "tooltips", "popup", "popups", "sidebar", "navbar", "footer",
+    "header", "homepage", "hyperlink", "hyperlinks", "metadata", "filename",
+    "filenames", "subfolder", "subfolders", "timestamp", "timestamps",
+    "uptime", "downtime", "regex", "regexes", "bool", "int", "str", "var",
+    "vars", "const", "enum", "async", "sync", "cron", "sudo", "npm", "git",
+    "github", "gitlab", "linux", "ubuntu", "macos", "ios", "android",
+    "chrome", "firefox", "gmail", "google", "youtube", "facebook",
+    "instagram", "tiktok", "twitter", "linkedin", "reddit", "wiki", "wikis",
+    "blog", "blogs", "vlog", "vlogs", "podcast", "podcasts", "hashtag",
+    "hashtags", "selfie", "selfies", "emoji", "emojis", "meme", "memes",
+    "unfollow", "retweet", "livestream", "webinar", "webinars", "ebook",
+    "ebooks", "smartphone", "smartphones", "smartwatch", "chromebook",
+    "bluetooth", "airdrop", "screenshare", "whiteboard", "spreadsheet",
+    "spreadsheets", "slideshow", "slideshows", "textbox", "autofill",
+    "autocorrect", "autosave", "undo", "redo", "clipboard", "keybinding",
+    "keybindings", "shortcut", "shortcuts", "changelog", "readme", "todo",
+    "todos", "backlog", "standup", "sprint", "sprints", "roadmap", "roadmaps",
+  ];
+
+  // Spans the spellchecker should never look inside: URLs, email addresses,
+  // `inline code`, and filenames like config.json or photo.JPG
+  const SPELL_MASK_RE = /(?:https?:\/\/|www\.)\S+|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b|`[^`\n]*`|\b[\w-]+\.(?:js|jsx|ts|tsx|json|html?|css|scss|md|txt|png|jpe?g|gif|svg|webp|ico|pdf|docx?|xlsx?|pptx?|csv|tsv|zip|tar|gz|rar|7z|exe|dmg|iso|apk|py|rb|java|cpp|cs|go|rs|php|sh|bat|yml|yaml|toml|ini|cfg|env|xml|sql|log|tmp|bak|mp3|mp4|mov|avi|wav|flac|webm|heic|ttf|otf|woff2?)\b/gi;
+
   function loadDictionary() {
     if (DICT || dictLoading) return;
     dictLoading = true;
@@ -1421,6 +1475,11 @@
         let rank = 0;
         for (const w of txt.split("\n")) {
           if (w) map.set(w, rank++);
+        }
+        // Tech/abbreviation vocabulary: valid words, but ranked low enough
+        // that they rarely beat everyday words as typo suggestions
+        for (const w of EXTRA_WORDS) {
+          if (!map.has(w)) map.set(w, rank + 50000);
         }
         DICT = map;
         recheck();
@@ -1877,6 +1936,8 @@
           "HTML","HTTP","HTTPS","HR","MP3","ATM","SMS","IQ","MVP","FYI","NDA",
           "IPO","ETA","RSS","XML","FM","AM","SQL","FAQ","EU","LLC","EPA","IRS",
           "ISP","NPC","SUV","STD","MC","MP","X-ray","Xbox","iPhone","iPad",
+          "SVG","EXE","XLS","XLSX","MP4","FTP","SSH","SSL","SDK","IDE","OS",
+          "IP","ID","NFT","LLM","AI",
           "Emmy","Oscar","Uber","Airbnb","Olympic","American","African","Asian",
           "Australian","Austrian","Italian","Indian","Indonesian","Iranian",
           "Iraqi","Irish","Israeli","Icelandic","English","Englishman","Egyptian",
@@ -1904,6 +1965,8 @@
           "URL","UFO","USB","UK","US","UN","UI","UX","GPS","DVD","TV","CEO",
           "CV","PhD","VIP","GIF","JPEG","PNG","NASA","NATO","UNESCO","W3C",
           "BBC","PC","DJ","Ukrainian","Utah","Euro","Eurozone","Yale","Jeep",
+          "PDF","CSV","JPG","DOC","DOCX","ZIP","CPU","GPU","JSON","YAML",
+          "VPN","PPT","PPTX","TXT","RAM","WAV","DB","CLI",
           "one-time","one-way","one-off",
         ];
         const reAcronymAn = this.reAcronymAn || (this.reAcronymAn = new RegExp(`\\b([Aa])n\\s+(${consonantSoundNames.join("|")})\\b`, "g"));
@@ -3528,6 +3591,63 @@
       },
     },
 
+    // ── Texting shorthand ────────────────────────────────────────────────────
+    {
+      id: "informal-abbreviation",
+      check(text) {
+        const findings = [];
+        const shorthand = {
+          "u r": "you are", "r u": "are you", "u": "you", "ur": "your",
+          "thx": "thanks", "pls": "please", "plz": "please", "ppl": "people",
+          "msg": "message", "msgs": "messages", "pic": "picture", "pics": "pictures",
+          "tho": "though", "thru": "through", "cuz": "because", "coz": "because",
+          "bc": "because", "b/c": "because", "w/o": "without", "w/": "with",
+          "gonna": "going to", "wanna": "want to", "gotta": "have to",
+          "kinda": "kind of", "sorta": "sort of", "dunno": "don't know",
+          "idk": "I don't know", "imo": "in my opinion", "imho": "in my humble opinion",
+          "btw": "by the way", "fyi": "for your information",
+          "asap": "as soon as possible", "tbh": "to be honest",
+          "rn": "right now", "nvm": "never mind", "omw": "on my way",
+          "ty": "thank you", "yw": "you're welcome",
+          "l8r": "later", "gr8": "great", "2day": "today",
+          "2morrow": "tomorrow", "b4": "before",
+        };
+        if (!this.compiled) {
+          // Longest keys first so "u r" wins over "u", "w/o" over "w/"
+          const keys = Object.keys(shorthand).sort((a, b) => b.length - a.length)
+            .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"));
+          this.compiled = new RegExp(`(?<![\\w/])(${keys.join("|")})(?![\\w/])`, "gi");
+          this.map = shorthand;
+        }
+        this.compiled.lastIndex = 0;
+        let m;
+        while ((m = this.compiled.exec(text)) !== null) {
+          const token = m[1];
+          // ALL-CAPS forms (FYI, ASAP, BC) read as established initialisms or
+          // other meanings — only coach the lowercase texting style
+          if (token.length >= 2 && token === token.toUpperCase() && /[A-Z]/.test(token)) continue;
+          const expansion = this.map[token.toLowerCase().replace(/\s+/g, " ")];
+          if (!expansion) continue;
+          const corrected = token[0] === token[0].toUpperCase() && token[0] !== token[0].toLowerCase()
+            ? expansion[0].toUpperCase() + expansion.slice(1) : expansion;
+          findings.push({
+            index: m.index,
+            length: token.length,
+            correction: corrected,
+            type: "informal-abbreviation",
+            severity: "info",
+            label: "Texting shorthand",
+            message: `"${token}" is texting shorthand — in most writing, spell out "${expansion}."`,
+            explanation:
+              `Shorthand like "${token}" is fine in chats but reads as rushed or too casual in email, schoolwork, and anything professional. Spelling it out ("${expansion}") costs a second and changes how the writing is received.`,
+            example: `❌  ${token}\n✅  ${expansion}`,
+            fix: `Write "${expansion}" in full.`,
+          });
+        }
+        return findings;
+      },
+    },
+
     // ── Regional spelling (dialect) ──────────────────────────────────────────
     {
       id: "dialect-spelling",
@@ -3671,10 +3791,19 @@
       check(text) {
         const findings = [];
         if (!DICT) return findings;
+        // Never spellcheck inside URLs, emails, inline code, or filenames
+        const masks = [];
+        SPELL_MASK_RE.lastIndex = 0;
+        let mk;
+        while ((mk = SPELL_MASK_RE.exec(text)) !== null) {
+          masks.push([mk.index, mk.index + mk[0].length]);
+        }
+        const inMask = (i, len) => masks.some(([s, e]) => i < e && i + len > s);
         const tokenRe = /[A-Za-z']+/g;
         let m;
         while ((m = tokenRe.exec(text)) !== null && findings.length < 40) {
           const word = m[0];
+          if (masks.length && inMask(m.index, word.length)) continue;
           // Skip: short words, anything with an apostrophe (contractions,
           // possessives), capitalized words (names, sentence starts are
           // checked lowercased), and ALL-CAPS acronyms

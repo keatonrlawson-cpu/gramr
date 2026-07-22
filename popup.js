@@ -48,6 +48,7 @@ const RULES_META = [
   { id: "dialect-spelling",       label: "Regional spelling (US/UK/AU/CA)", severity: "info" },
   { id: "try-and",                label: '"try and" vs "try to"',       severity: "info" },
   { id: "redundant-pair",         label: "Redundant pairs (return back, discuss about)", severity: "info" },
+  { id: "informal-abbreviation",  label: "Texting shorthand (thx, b/c, thru)", severity: "info" },
 ];
 
 // ── Learning model (mirrors content.js) ─────────────────────────────────────
@@ -55,6 +56,7 @@ const SLIP_RULES = new Set(["misspelling", "repeated-word"]);
 const HABIT_RULES = new Set([
   "wordy", "passive-voice", "oxford-comma", "try-and",
   "dialect-spelling", "redundant-acronym", "redundant-pair",
+  "informal-abbreviation",
 ]);
 function ruleKind(type) {
   if (SLIP_RULES.has(type)) return "slip";
