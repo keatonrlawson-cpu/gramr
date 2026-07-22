@@ -218,8 +218,39 @@ dialectSelect.addEventListener("change", () => {
   chrome.storage.sync.set({ dialect: dialectSelect.value });
 });
 
-// Mistake history + learning progress
-loadProgress();
+// ── Optional-feature preferences ────────────────────────────────────────────
+const PREF_DEFAULTS = { gamification: true, badges: true, focus: true, history: true, adaptive: true };
+let prefs = { ...PREF_DEFAULTS };
+const prefInputs = {
+  gamification: document.getElementById("optGamification"),
+  badges: document.getElementById("optBadges"),
+  focus: document.getElementById("optFocus"),
+  history: document.getElementById("optHistory"),
+  adaptive: document.getElementById("optAdaptive"),
+};
+
+chrome.storage.sync.get({ prefs: PREF_DEFAULTS }, (res) => {
+  prefs = { ...PREF_DEFAULTS, ...res.prefs };
+  for (const [key, input] of Object.entries(prefInputs)) {
+    input.checked = prefs[key];
+    input.addEventListener("change", () => {
+      prefs[key] = input.checked;
+      chrome.storage.sync.set({ prefs });
+      applyPrefVisibility();
+      if (input.checked && (key === "history" || key === "focus" || key === "gamification" || key === "badges")) {
+        loadProgress(); // re-render sections that were hidden
+      }
+    });
+  }
+  applyPrefVisibility();
+  loadProgress();
+});
+
+function applyPrefVisibility() {
+  document.getElementById("progressSection").hidden = !prefs.gamification;
+  if (!prefs.focus) document.getElementById("focusCard").hidden = true;
+  if (!prefs.history) historySection.hidden = true;
+}
 clearHistoryBtn.addEventListener("click", () => {
   chrome.storage.local.set({ history: {}, correctionsApplied: 0, bands: {}, focus: null });
   historySection.hidden = true;
@@ -245,14 +276,17 @@ function loadProgress() {
         const best = bands[type] ?? 0;
         const rank = BAND_RANK[band];
         if (rank > best) {
-          if (best < 1 && rank >= 1) xp += 10;
-          if (best < 2 && rank >= 2) xp += 25;
+          if (prefs.gamification) {
+            if (best < 1 && rank >= 1) xp += 10;
+            if (best < 2 && rank >= 2) xp += 25;
+          }
           bands[type] = rank;
           if (rank === 2) promoted.push(h.label || type);
         }
       }
 
       // ── Streak (grace: yesterday's streak still shows as alive today) ──
+      if (prefs.gamification) {
       const dayMs = 86400000;
       const today = new Date();
       const localDay = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -274,8 +308,10 @@ function loadProgress() {
       document.getElementById("xpNext").textContent =
         (promoted.length ? `⭐ Mastered: ${promoted.join(", ")} · ` : "") +
         `${lv.next - xp} XP to level ${lv.n + 1}`;
+      } // end gamification
 
       // ── Focus of the week: worst recent knowledge-gap rule ──
+      if (prefs.focus) {
       if (!focus || focus.week !== week) {
         let bestType = null, bestWeight = 0;
         for (const [type, h] of Object.entries(history)) {
@@ -293,10 +329,12 @@ function loadProgress() {
         document.getElementById("focusLesson").textContent = LESSONS[focus.ruleId].lesson;
         document.getElementById("focusTrick").textContent = "💡 " + LESSONS[focus.ruleId].trick;
       }
+      } // end focus
 
       chrome.storage.local.set({ xp, bands, focus });
 
       // ── Top mistakes list with mastery badges and weekly trends ──
+      if (!prefs.history) return;
       const entries = Object.entries(history).sort((a, b) => b[1].count - a[1].count).slice(0, 5);
       if (!entries.length && !correctionsApplied) {
         historySection.hidden = true;
@@ -315,7 +353,7 @@ function loadProgress() {
         let trend = "";
         if (lastWk > 0 && thisWk < lastWk) trend = `<span class="history-trend history-trend--down">▼</span>`;
         else if (lastWk > 0 && thisWk > lastWk) trend = `<span class="history-trend history-trend--up">▲</span>`;
-        const badge = bandByRule[type]
+        const badge = prefs.badges && bandByRule[type]
           ? `<span class="history-band" title="${bandByRule[type]}">${BAND_EMOJI[bandByRule[type]]}</span>`
           : "";
         const li = document.createElement("li");

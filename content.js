@@ -23,6 +23,8 @@
   let lastCheckedText = null;
   let historyLocal = {};           // mirror of chrome.storage.local history
   let streakTouchedDay = null;
+  // Optional features — all on by default, toggleable in the popup
+  let prefs = { gamification: true, badges: true, focus: true, history: true, adaptive: true };
 
   // ─── Learning model ──────────────────────────────────────────────────────────
   // Every rule is a "slip" (typing accident — don't teach), a "habit" (style
@@ -68,12 +70,13 @@
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
   chrome.storage.sync.get(
-    { enabled: true, dialect: "us", disabledSites: [], disabledRules: [] },
+    { enabled: true, dialect: "us", disabledSites: [], disabledRules: [], prefs: null },
     (res) => {
       enabled = res.enabled;
       dialect = res.dialect;
       siteDisabled = res.disabledSites.includes(location.hostname);
       disabledRules = new Set(res.disabledRules);
+      if (res.prefs) prefs = { ...prefs, ...res.prefs };
       if (enabled && !siteDisabled) attachListeners();
     }
   );
@@ -109,6 +112,9 @@
       if (changes.disabledRules) {
         disabledRules = new Set(changes.disabledRules.newValue);
         recheck();
+      }
+      if (changes.prefs) {
+        prefs = { ...prefs, ...(changes.prefs.newValue || {}) };
       }
     }
     if (area === "local") {
@@ -513,10 +519,11 @@
     // Fading scaffolds: how much teaching this tooltip shows depends on how
     // well the user knows this rule. Slips get minimal treatment always.
     const kind = ruleKind(finding.type);
-    const band = kind === "slip" ? "slip" : bandFor(computeMastery(historyLocal[finding.type]));
+    let band = kind === "slip" ? "slip" : bandFor(computeMastery(historyLocal[finding.type]));
+    if (!prefs.adaptive) band = "learning";        // adaptive off: always full teaching
     const whyOpen = band === "learning";           // full lesson for rules still being learned
     const showLessonSections = band !== "slip";    // slips: message + actions only
-    const masteredChip = band === "mastered"
+    const masteredChip = prefs.badges && band === "mastered"
       ? '<span class="gramr-tip-band" title="You rarely make this mistake anymore">⭐ mastered</span>'
       : "";
 
@@ -626,7 +633,7 @@
       const btn = tipEl.querySelector("[data-apply]");
       if (btn) {
         btn.classList.add("gramr-apply-btn--done");
-        btn.querySelector(".gramr-apply-text").textContent = "Applied! +5 XP";
+        btn.querySelector(".gramr-apply-text").textContent = prefs.gamification ? "Applied! +5 XP" : "Applied!";
       }
     }
 
@@ -657,7 +664,9 @@
         const h = history[finding.type] || { count: 1, label: finding.label, severity: finding.severity };
         h.applied = (h.applied || 0) + 1;
         history[finding.type] = h;
-        chrome.storage.local.set({ correctionsApplied: correctionsApplied + 1, xp: xp + 5, history });
+        const update = { correctionsApplied: correctionsApplied + 1, history };
+        if (prefs.gamification) update.xp = xp + 5;
+        chrome.storage.local.set(update);
       }
     );
   }
@@ -668,6 +677,7 @@
   }
 
   function touchStreak() {
+    if (!prefs.gamification) return;
     const day = localDay(new Date());
     if (streakTouchedDay === day) return;
     streakTouchedDay = day;
